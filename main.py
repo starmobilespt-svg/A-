@@ -6,11 +6,12 @@ import threading
 import time
 import requests
 from flask import Flask
-from telegram import Update, ReplyKeyboardMarkup, KeyboardButton
+from telegram import Update, ReplyKeyboardMarkup, KeyboardButton, InlineKeyboardButton, InlineKeyboardMarkup
 from telegram.ext import (
     ApplicationBuilder,
     CommandHandler,
     ContextTypes,
+    CallbackQueryHandler,
     MessageHandler,
     filters
 )
@@ -20,29 +21,27 @@ BOT_TOKEN = "8939067464:AAFwfWTwtzJGlCS-Vh3aUlt55NRS2tgY4wg"
 DB_FILE = "shop_management.db"
 
 # ----------------------------------------------------
-# 🌐 Render Sleep မဖြစ်အောင် ထိန်းပေးမည့် Web Server & Ping စနစ်
+# 🌐 Auto Ping (Sleep မဖြစ်အောင် ထိန်းပေးမည့် စနစ်)
 # ----------------------------------------------------
 web_app = Flask(__name__)
 
 @web_app.route('/')
 def home():
-    return "Bot is alive and running!"
+    return "Bot is running 24/7!"
 
 def run_flask():
     port = int(os.environ.get("PORT", 8080))
     web_app.run(host='0.0.0.0', port=port)
 
-# ၁၅ မိနစ်တစ်ခါ Auto Ping ပို့ပေးမည့် Function
 def auto_ping():
     while True:
-        time.sleep(14 * 60) # ၁၄ မိနစ်တိုင်း Ping မည်
+        time.sleep(14 * 60) # ၁၄ မိနစ်တိုင်း Auto Ping မည်
         render_url = os.environ.get("RENDER_EXTERNAL_URL")
         if render_url:
             try:
                 requests.get(render_url)
-                print("Auto Ping sent to keep bot alive.")
-            except Exception as e:
-                print(f"Auto Ping Error: {e}")
+            except Exception:
+                pass
 
 # ----------------------------------------------------
 # 📦 Database Setup
@@ -81,27 +80,26 @@ init_db()
 def get_db():
     return sqlite3.connect(DB_FILE)
 
-# ----------------------------------------------------
-# 📱 Telegram Bot Layout & Keyboards
-# ----------------------------------------------------
+# Custom Bottom Keyboard Menu (အရှုံးအမြတ် ခလုတ် ပါဝင်သည်)
 def get_main_keyboard():
     keyboard = [
         [KeyboardButton("📦 ဝယ်ယူမည်"), KeyboardButton("💵 လက်ငင်းရောင်းမည်")],
         [KeyboardButton("⏳ အရစ်ကျရောင်းမည်"), KeyboardButton("💰 ငွေဆပ်မည်")],
         [KeyboardButton("📊 လက်ကျန် Stock"), KeyboardButton("⏳ ပေးရန်ကျန်သူများ")],
-        [KeyboardButton("📈 လချုပ်ကြည့်မည်"), KeyboardButton("🗑️ စာရင်းဖျက်မည်")],
-        [KeyboardButton("📁 Excel ထုတ်မည်"), KeyboardButton("💾 Backup ယူမည်")]
+        [KeyboardButton("📈 လချုပ် အရှုံးအမြတ်ကြည့်မည်"), KeyboardButton("🗑️ စာရင်းဖျက်မည်")],
+        [KeyboardButton("📁 Excel Backup ယူမည်"), KeyboardButton("📥 Excel Restore လုပ်မည်")],
+        [KeyboardButton("💾 DB Backup ယူမည်"), KeyboardButton("📜 Command များကြည့်မည်")]
     ]
     return ReplyKeyboardMarkup(keyboard, resize_keyboard=True)
 
 # Start Command
 async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
     await update.message.reply_text(
-        "မင်္ဂလာပါ! စာရင်းကိုင် Bot မှ ကြိုဆိုပါသည်။\nအောက်ပါ ခလုတ်များကို နှိပ်၍ အသုံးပြုနိုင်ပါသည်။\n\n(စာရင်းသွင်းနည်း ပုံစံများကို ကြည့်လိုပါက `command` ဟု စာရိုက်ပါ)",
+        "မင်္ဂလာပါ! စာရင်းကိုင် Bot မှ ကြိုဆိုပါသည်။\nအောက်ပါ ခလုတ်များကို နှိပ်၍ အသုံးပြုနိုင်ပါသည်။",
         reply_markup=get_main_keyboard()
     )
 
-# Command List ( command ဟု ရိုက်မှ ပေါ်မည် )
+# Command List
 async def show_commands(update: Update, context: ContextTypes.DEFAULT_TYPE):
     msg = (
         "🛍️ **အသုံးပြုနိုင်သော Command များ (ထိလိုက်ပါက Copy ရပါသည်):**\n\n"
@@ -116,7 +114,7 @@ async def show_commands(update: Update, context: ContextTypes.DEFAULT_TYPE):
         "📊 **၅။ စာရင်းများ စစ်ဆေးခြင်း:**\n"
         "`/stock` - Stock စာရင်းကြည့်ရန်\n"
         "`/list` - အရစ်ကျကျန်သူများ စာရင်းကြည့်ရန်\n"
-        "`/monthly_report 2026-07` - လချုပ်ကြည့်ရန်\n\n"
+        "`/monthly_report 2026-07` - လချုပ် အရှုံးအမြတ်ကြည့်ရန်\n\n"
         "🗑️ **၆။ စာရင်းမှား ဖျက်ခြင်း:**\n"
         "`/delete_sale 1` - အရောင်း ID ဖြင့် စာရင်းတစ်ခုဖျက်ရန်\n"
         "`/delete_item iPhone 13` - Stock ပစ္စည်းတစ်ခုဖျက်ရန်\n"
@@ -256,24 +254,118 @@ async def list_pending(update: Update, context: ContextTypes.DEFAULT_TYPE):
     msg += "💡 *စာရင်းမှား၍ ဖျက်လိုပါက:* `/delete_sale <ID>`"
     await update.message.reply_text(msg, parse_mode="Markdown")
 
+# 📊 လအလိုက် အရှုံးအမြတ် တွက်ချက်ပြသသည့် Function
 async def monthly_report(update: Update, context: ContextTypes.DEFAULT_TYPE):
     try:
         year_month = context.args[0].strip() if context.args else datetime.date.today().strftime("%Y-%m")
         conn = get_db()
         cursor = conn.cursor()
-        cursor.execute("SELECT total_price, paid_amount FROM sales WHERE strftime('%Y-%m', date) = ?", (year_month,))
+
+        # Sales and inventory cost join query
+        cursor.execute('''
+            SELECT s.item_name, s.total_price, s.paid_amount, COALESCE(i.cost_price, 0)
+            FROM sales s
+            LEFT JOIN inventory i ON s.item_name = i.item_name
+            WHERE strftime('%Y-%m', s.date) = ?
+        ''', (year_month,))
+        
         rows = cursor.fetchall()
         conn.close()
+
         if not rows:
-            await update.message.reply_text(f"📅 {year_month} လအတွက် စာရင်း မရှိသေးပါ။")
+            await update.message.reply_text(f"📅 **{year_month}** လအတွက် အရောင်းစာရင်း မရှိသေးပါ။", parse_mode="Markdown")
             return
-        total_sales_value = sum(r[0] for r in rows)
-        total_collected_cash = sum(r[1] for r in rows)
-        msg = f"📊 **{year_month} လချုပ် စာရင်းအကျဉ်း**\n\n🛒 စုစုပေါင်း ရောင်းချရမှု ပမာဏ: `{total_sales_value:,.0f}` MMK\n💵 လက်ဝယ် ရရှိပြီးသော ငွေစုစုပေါင်း: `{total_collected_cash:,.0f}` MMK\n📉 ရရန်ကျန်ငွေ ပမာဏ: `{(total_sales_value - total_collected_cash):,.0f}` MMK\n"
+
+        total_sales_value = sum(r[1] for r in rows)      # စုစုပေါင်း ရောင်းဈေး
+        total_collected_cash = sum(r[2] for r in rows)   # လက်ဝယ်ရပြီး ငွေ
+        total_cost = sum(r[3] for r in rows)             # ပစ္စည်းဝယ်ရင်းနှီးစရိတ် စုစုပေါင်း
+
+        # Net Profit Calculation (စုစုပေါင်း ရောင်းဈေး - စုစုပေါင်း ဝယ်ရင်းနှီးစရိတ်)
+        net_profit = total_sales_value - total_cost
+
+        # Cash Profit (လက်ငင်း ရရှိငွေ - ဝယ်ရင်းနှီးစရိတ်)
+        cash_profit = total_collected_cash - total_cost
+
+        profit_status = "🟢 အမြတ်" if net_profit >= 0 else "🔴 အရှုံး"
+
+        msg = f"📊 **{year_month} လချုပ် အရှုံးအမြတ် စာရင်း**\n\n"
+        msg += f"🛒 စုစုပေါင်း အရောင်းပမာဏ: `{total_sales_value:,.0f}` MMK\n"
+        msg += f"💵 လက်ဝယ် ရရှိပြီးငွေ: `{total_collected_cash:,.0f}` MMK\n"
+        msg += f"📉 ပေးရန်ကျန် အရစ်ကျငွေ: `{(total_sales_value - total_collected_cash):,.0f}` MMK\n"
+        msg += f"📦 ရောင်းရ ပစ္စည်းဝယ်ရင်းစရိတ်: `{total_cost:,.0f}` MMK\n"
+        msg += "───────────────────\n"
+        msg += f"{profit_status} (ခန့်မှန်း အသားတင်): `{abs(net_profit):,.0f}` MMK\n"
+        msg += f"💡 လက်ရှိ လက်ဝယ် အမြတ်/အရှုံး: `{cash_profit:,.0f}` MMK"
+
         await update.message.reply_text(msg, parse_mode="Markdown")
     except Exception as e:
         await update.message.reply_text(f"❌ အမှားအယွင်းရှိပါသည်: {str(e)}")
 
+# Delete Commands
+async def delete_sale(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    try:
+        if not context.args:
+            await update.message.reply_text("❌ **Standard Format:**\n`/delete_sale <ID>`\n\n👇 **နှိပ်ပြီး ကူးယူပါ:**\n`/delete_sale 1`", parse_mode="Markdown")
+            return
+        sale_id = int(context.args[0].strip())
+        conn = get_db()
+        cursor = conn.cursor()
+        cursor.execute("SELECT customer_name, item_name FROM sales WHERE id = ?", (sale_id,))
+        row = cursor.fetchone()
+        if not row:
+            await update.message.reply_text(f"❌ ID `{sale_id}` ဖြင့် အရောင်းစာရင်း ရှာမတွေ့ပါ။", parse_mode="Markdown")
+            conn.close()
+            return
+        cursor.execute("DELETE FROM sales WHERE id = ?", (sale_id,))
+        conn.commit()
+        conn.close()
+        await update.message.reply_text(f"🗑️ ID `{sale_id}` ({row[0]} - {row[1]}) အရောင်းစာရင်းကို ဖျက်လိုက်ပါပြီ။", parse_mode="Markdown")
+    except Exception as e:
+        await update.message.reply_text(f"❌ အမှားအယွင်းရှိပါသည်: {str(e)}")
+
+async def delete_item(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    try:
+        if not context.args:
+            await update.message.reply_text("❌ **Standard Format:**\n`/delete_item <ပစ္စည်းအမည်>`\n\n👇 **နှိပ်ပြီး ကူးယူပါ:**\n`/delete_item iPhone 13`", parse_mode="Markdown")
+            return
+        item_name = " ".join(context.args).strip()
+        conn = get_db()
+        cursor = conn.cursor()
+        cursor.execute("SELECT item_name FROM inventory WHERE item_name = ?", (item_name,))
+        row = cursor.fetchone()
+        if not row:
+            await update.message.reply_text(f"❌ Stock ထဲတွင် `{item_name}` အမည်ဖြင့် ပစ္စည်း ရှာမတွေ့ပါ။", parse_mode="Markdown")
+            conn.close()
+            return
+        cursor.execute("DELETE FROM inventory WHERE item_name = ?", (item_name,))
+        conn.commit()
+        conn.close()
+        await update.message.reply_text(f"🗑️ Stock ထဲမှ `{item_name}` စာရင်းကို ဖျက်လိုက်ပါပြီ။", parse_mode="Markdown")
+    except Exception as e:
+        await update.message.reply_text(f"❌ အမှားအယွင်းရှိပါသည်: {str(e)}")
+
+async def reset_all(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    keyboard = [[
+        InlineKeyboardButton("✅ အကုန်ဖျက်မည် (Confirm)", callback_data="confirm_reset_all"),
+        InlineKeyboardButton("❌ မဖျက်တော့ပါ (Cancel)", callback_data="cancel_reset_all")
+    ]]
+    await update.message.reply_text("⚠️ **သတိပေးချက်:** စာရင်းအားလုံး ဖျက်ပစ်ပါမည်။ ဧကန်မုချ ဖျက်လိုပါသလား?", reply_markup=InlineKeyboardMarkup(keyboard), parse_mode="Markdown")
+
+async def reset_callback_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    query = update.callback_query
+    await query.answer()
+    if query.data == "confirm_reset_all":
+        conn = get_db()
+        cursor = conn.cursor()
+        cursor.execute("DELETE FROM inventory")
+        cursor.execute("DELETE FROM sales")
+        conn.commit()
+        conn.close()
+        await query.message.edit_text("💥 **စာရင်း အားလုံးကို အောင်မြင်စွာ ဖျက်ပစ်ပြီးပါပြီ!**", parse_mode="Markdown")
+    elif query.data == "cancel_reset_all":
+        await query.message.edit_text("❌ စာရင်းဖျက်ခြင်းကို ပယ်ဖျက်လိုက်ပါပြီ။")
+
+# Excel Import / Export
 async def export_excel(update: Update, context: ContextTypes.DEFAULT_TYPE):
     try:
         conn = get_db()
@@ -284,19 +376,68 @@ async def export_excel(update: Update, context: ContextTypes.DEFAULT_TYPE):
         with pd.ExcelWriter(file_path, engine='openpyxl') as writer:
             df_inventory.to_excel(writer, sheet_name='Inventory', index=False)
             df_sales.to_excel(writer, sheet_name='Sales', index=False)
-        await update.message.reply_document(document=open(file_path, 'rb'), filename=file_path)
+        await update.message.reply_document(
+            document=open(file_path, 'rb'), 
+            filename=file_path,
+            caption="📊 **Excel File စာရင်းများ ထုတ်ယူပြီးပါပြီ!**"
+        )
     except Exception as e:
         await update.message.reply_text(f"❌ Excel export မလုပ်နိုင်ပါ: {str(e)}")
 
+async def handle_excel_upload(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    document = update.message.document
+    if not document.file_name.endswith('.xlsx'):
+        await update.message.reply_text("❌ ကျေးဇူးပြု၍ `.xlsx` Excel File များကိုသာ ပို့ပေးပါ။")
+        return
+
+    status_msg = await update.message.reply_text("🔄 Excel File ကို ဖတ်ရှုပြီး Database သို့ အစားထိုး ပြင်ဆင်နေပါသည်...")
+
+    try:
+        file = await context.bot.get_file(document.file_id)
+        temp_path = "temp_restore.xlsx"
+        await file.download_to_drive(temp_path)
+
+        xls = pd.ExcelFile(temp_path)
+        conn = get_db()
+        cursor = conn.cursor()
+
+        if 'Inventory' in xls.sheet_names:
+            df_inv = pd.read_excel(xls, sheet_name='Inventory')
+            cursor.execute("DELETE FROM inventory")
+            for _, row in df_inv.iterrows():
+                cursor.execute('INSERT INTO inventory (id, item_name, quantity, cost_price) VALUES (?, ?, ?, ?)', (row.get('id'), row['item_name'], row['quantity'], row['cost_price']))
+
+        if 'Sales' in xls.sheet_names:
+            df_sales = pd.read_excel(xls, sheet_name='Sales')
+            cursor.execute("DELETE FROM sales")
+            for _, row in df_sales.iterrows():
+                cursor.execute('INSERT INTO sales (id, customer_name, item_name, sale_type, total_price, paid_amount, monthly_payment, status, date) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)', (
+                    row.get('id'), row['customer_name'], row['item_name'], row['sale_type'],
+                    row['total_price'], row['paid_amount'], row['monthly_payment'],
+                    row['status'], str(row['date'])
+                ))
+
+        conn.commit()
+        conn.close()
+
+        if os.path.exists(temp_path):
+            os.remove(temp_path)
+
+        await status_msg.edit_text("✅ **Excel File မှ စာရင်းများကို Database သို့ အောင်မြင်စွာ Restore / Recover လုပ်ပြီးပါပြီ!**")
+    except Exception as e:
+        await status_msg.edit_text(f"❌ Excel မှ စာရင်းသွင်းရာတွင် အမှားဖြစ်ပေါ်ပါသည်: {str(e)}")
+
+# Backup Database
 async def backup(update: Update, context: ContextTypes.DEFAULT_TYPE):
     try:
         await update.message.reply_document(document=open(DB_FILE, 'rb'), filename="database_backup.db", caption="📁 **Database Backup File ရရှိပါပြီ!**")
     except Exception as e:
         await update.message.reply_text(f"❌ Backup မထုတ်ယူနိုင်ပါ: {str(e)}")
 
-# Bottom Button Click Handler
+# Bottom Buttons Listener
 async def handle_button_clicks(update: Update, context: ContextTypes.DEFAULT_TYPE):
     text = update.message.text
+
     if text == "📦 ဝယ်ယူမည်":
         await update.message.reply_text("📦 **ဝယ်ယူမှု စာရင်းသွင်းရန်:**\n`/buy <ပစ္စည်းအမည်> | <အရေအတွက်> | <ဝယ်ဈေး>`\n\n👇 **နှိပ်ပြီး ကူးယူပါ:**\n`/buy iPhone 13 | 2 | 1200000`", parse_mode="Markdown")
     elif text == "💵 လက်ငင်းရောင်းမည်":
@@ -309,28 +450,29 @@ async def handle_button_clicks(update: Update, context: ContextTypes.DEFAULT_TYP
         await stock(update, context)
     elif text == "⏳ ပေးရန်ကျန်သူများ":
         await list_pending(update, context)
-    elif text == "📈 လချုပ်ကြည့်မည်":
+    elif text in ["📈 လချုပ် အရှုံးအမြတ်ကြည့်မည်", "📈 လချုပ်ကြည့်မည်"]:
         await monthly_report(update, context)
     elif text == "🗑️ စာရင်းဖျက်မည်":
         await update.message.reply_text("🗑️ **စာရင်းမှား ဖျက်လိုပါက:**\n• အရောင်းစာရင်းဖျက်ရန်: `/delete_sale <ID>`\n• Stock ပစ္စည်းဖျက်ရန်: `/delete_item <ပစ္စည်းအမည်>`\n• စာရင်းအားလုံးဖျက်ရန်: `/reset_all`", parse_mode="Markdown")
-    elif text == "📁 Excel ထုတ်မည်":
+    elif text in ["📁 Excel Backup ယူမည်", "📁 Excel ထုတ်မည်"]:
         await export_excel(update, context)
-    elif text == "💾 Backup ယူမည်":
+    elif text == "📥 Excel Restore လုပ်မည်":
+        await update.message.reply_text(
+            "📥 **Excel စာရင်းများ ပြန်လည် Restore လုပ်ရန်:**\n\n"
+            "၁။ `📁 Excel Backup ယူမည်` ဖြင့် ရလာသော Excel ဖိုင်ကို မိမိစိတ်ကြိုက် ပြင်ဆင်ပါ။\n"
+            "၂။ ပြင်ဆင်ပြီးသွားသော Excel ဖိုင် (`.xlsx`) ကို ဒီ Chat ထဲသို့ File အနေဖြင့် Send/Upload ပြုလုပ်ပေးလိုက်ပါ။\n"
+            "၃။ Bot မှ အလိုအလျောက် ဖတ်ရှုပြီး စာရင်းများကို Update / Restore လုပ်ပေးသွားပါမည်။"
+        )
+    elif text in ["💾 DB Backup ယူမည်", "💾 Backup ယူမည်"]:
         await backup(update, context)
-    elif text.lower() == "command":
+    elif text in ["📜 Command များကြည့်မည်", "command", "/command"]:
         await show_commands(update, context)
 
-# ----------------------------------------------------
-# 🚀 Main App Start Function
-# ----------------------------------------------------
+# Main Function
 def main():
-    # 1. Start Flask Web Server
     threading.Thread(target=run_flask, daemon=True).start()
-
-    # 2. Start Auto Ping Thread
     threading.Thread(target=auto_ping, daemon=True).start()
 
-    # 3. Start Telegram Bot
     app = ApplicationBuilder().token(BOT_TOKEN).build()
 
     app.add_handler(CommandHandler("start", start))
@@ -342,14 +484,18 @@ def main():
     app.add_handler(CommandHandler("stock", stock))
     app.add_handler(CommandHandler("list", list_pending))
     app.add_handler(CommandHandler("monthly_report", monthly_report))
+    app.add_handler(CommandHandler("delete_sale", delete_sale))
+    app.add_handler(CommandHandler("delete_item", delete_item))
+    app.add_handler(CommandHandler("reset_all", reset_all))
     app.add_handler(CommandHandler("export", export_excel))
     app.add_handler(CommandHandler("backup", backup))
 
+    app.add_handler(CallbackQueryHandler(reset_callback_handler))
+    app.add_handler(MessageHandler(filters.Document.MimeType("application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"), handle_excel_upload))
     app.add_handler(MessageHandler(filters.TEXT & ~filters.COMMAND, handle_button_clicks))
 
-    print("Bot is running with Auto-Ping Keep Alive...")
+    print("Bot is running...")
     app.run_polling()
 
 if __name__ == '__main__':
     main()
-        
