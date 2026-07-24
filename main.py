@@ -83,15 +83,16 @@ init_db()
 
 # --- 3. BOT COMMAND HANDLERS ---
 
-# /start command (Button သာ ပြမည်)
+# /start command
 async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
     keyboard = [
-        [InlineKeyboardButton("📋 Command မီနူးများ ကြည့်ရန်", callback_data="show_commands")]
+        [InlineKeyboardButton("📋 Command မီနူးများ ကြည့်ရန်", callback_data="show_commands")],
+        [InlineKeyboardButton("💾 Backup / Restore ပြုလုပ်ရန်", callback_data="show_backup_menu")]
     ]
     reply_markup = InlineKeyboardMarkup(keyboard)
     await update.message.reply_text(
         "👋 **မင်္ဂလာပါ! အရောင်း/အဝယ် စာရင်းကိုင် Bot မှ ကြိုဆိုပါတယ်။**\n\n"
-        "အသုံးပြုနိုင်သည့် Command မီနူးများကို ကြည့်ရန် အောက်ပါ ခလုတ်ကို နှိပ်ပါ။",
+        "လိုရာ လုပ်ဆောင်ချက်ကို အောက်ပါ ခလုတ်များမှတစ်ဆင့် ရွေးချယ်နိုင်ပါသည်။",
         reply_markup=reply_markup,
         parse_mode='Markdown'
     )
@@ -254,11 +255,9 @@ async def check_stock(update: Update, context: ContextTypes.DEFAULT_TYPE):
     conn = sqlite3.connect(DB_NAME)
     cursor = conn.cursor()
 
-    # ဝယ်ယူထားသည်များ
     cursor.execute("SELECT item_name, SUM(quantity) FROM purchases WHERE user_id=? GROUP BY item_name", (user_id,))
     purchases = {row[0]: row[1] for row in cursor.fetchall()}
 
-    # ရောင်းထုတ်ထားသည်များ
     cursor.execute("SELECT item_name, SUM(quantity) FROM sales WHERE user_id=? GROUP BY item_name", (user_id,))
     sales = {row[0]: row[1] for row in cursor.fetchall()}
 
@@ -359,45 +358,107 @@ async def export_excel(update: Update, context: ContextTypes.DEFAULT_TYPE):
         df_buy.to_excel(writer, sheet_name='Purchases', index=False)
 
     with open(excel_file, 'rb') as f:
-        await update.message.reply_document(document=f, filename=excel_file, caption="📊 အရောင်း/အဝယ် စာရင်း Excel File")
+        await update.message.reply_document(document=f, filename=excel_file, caption="📊 အရောင်း/အဝယ် စာရင်း Excel File (ဒီ File ထဲမှာ ပြင်ဆင်ပြီး Bot ထံ ပြန်ပို့၍ Restore လုပ်နိုင်ပါသည်။)")
     
     os.remove(excel_file)
 
-# 💾 ၉။ Backup ပြုလုပ်ရန် /backup
-async def backup_db(update: Update, context: ContextTypes.DEFAULT_TYPE):
+# 💾 ၉။ Backup /backup command
+async def send_backup_file(context, chat_id):
     if not os.path.exists(DB_NAME):
-        await update.message.reply_text("❌ Backup လုပ်ရန် Database မရှိပါ။")
+        await context.bot.send_message(chat_id=chat_id, text="❌ Backup လုပ်ရန် Database မရှိသေးပါ။")
         return
 
     today = datetime.now().strftime("%Y-%m-%d")
     backup_filename = f"shop_backup_{today}.db"
 
     with open(DB_NAME, 'rb') as f:
-        await update.message.reply_document(document=f, filename=backup_filename, caption="📦 Shop Database Backup File.")
+        await context.bot.send_document(
+            chat_id=chat_id, 
+            document=f, 
+            filename=backup_filename, 
+            caption="📦 **Shop Database Backup File ဖြစ်ပါသည်။**"
+        )
 
-# --- 4. BUTTON CALLBACK & FILE HANDLERS ---
+async def backup_db(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    await send_backup_file(context, update.effective_chat.id)
 
-# Backup File ပို့လာပါက Button ပြပေးခြင်း
+# --- 4. BUTTON CALLBACK & FILE HANDLERS (EXCEL & DB RESTORE) ---
+
+# Document Files (Excel / DB) ပို့လာပါက စစ်ဆေးခြင်း
 async def handle_document(update: Update, context: ContextTypes.DEFAULT_TYPE):
     doc = update.message.document
-    if doc and doc.file_name and doc.file_name.endswith('.db'):
+    if not doc or not doc.file_name:
+        return
+
+    # ၁။ .db Backup File ဖြစ်လျှင်
+    if doc.file_name.endswith('.db'):
         keyboard = [
-            [InlineKeyboardButton("🔄 စာရင်းများ ပြန်လည် Recover (Restore) လုပ်မည်", callback_data=f"restore_{doc.file_id}")]
+            [InlineKeyboardButton("🔄 စာရင်းများ ပြန်လည် Recover (Restore) လုပ်မည်", callback_data=f"do_restore_db_{doc.file_id}")]
         ]
         reply_markup = InlineKeyboardMarkup(keyboard)
         await update.message.reply_text(
-            "📦 **Backup File ရရှိပါသည်။**\n"
-            "စာရင်းများကို ပြန်လည် Recover လုပ်လိုပါက အောက်ပါ ခလုတ်ကို နှိပ်ပါ။",
+            "📦 **Database Backup File ရရှိပါသည်။**\n"
+            "စာရင်းများကို ပြန်လည် Restore လုပ်လိုပါက အောက်ပါ ခလုတ်ကို နှိပ်ပါ။",
             reply_markup=reply_markup,
             parse_mode='Markdown'
         )
 
+    # ၂။ Excel File (.xlsx) ဖြစ်လျှင်
+    elif doc.file_name.endswith('.xlsx'):
+        keyboard = [
+            [InlineKeyboardButton("🔄 ပြင်ဆင်ထားသော Excel မှ စာရင်းများ Recover လုပ်မည်", callback_data=f"do_restore_excel_{doc.file_id}")]
+        ]
+        reply_markup = InlineKeyboardMarkup(keyboard)
+        await update.message.reply_text(
+            "📊 **Excel စာရင်း File ရရှိပါသည်။**\n"
+            "Excel ထဲရှိ ပြင်ဆင်ထားသော စာရင်းများဖြင့် Database ထဲသို့ ပြောင်းလဲ Restore လုပ်လိုပါက အောက်ပါ ခလုတ်ကို နှိပ်ပါ။",
+            reply_markup=reply_markup,
+            parse_mode='Markdown'
+        )
+
+# Excel မှ စာရင်းများကို Database ထဲသို့ Update/Restore လုပ်ပေးသည့် Function
+def restore_from_excel_file(excel_file_path, user_id):
+    xls = pd.ExcelFile(excel_file_path)
+    conn = sqlite3.connect(DB_NAME)
+    cursor = conn.cursor()
+
+    # Sales Sheet
+    if 'Sales' in xls.sheet_names:
+        df_sales = pd.read_excel(xls, 'Sales')
+        cursor.execute("DELETE FROM sales WHERE user_id=?", (user_id,))
+        for _, r in df_sales.iterrows():
+            cursor.execute("""
+                INSERT INTO sales (user_id, customer_name, item_name, sale_type, quantity, total_sale_price, down_payment, remaining_amount, monthly_min_amount, months_left, first_date, last_date)
+                VALUES (?, ?, ?, ?, 1, ?, ?, ?, ?, ?, ?, ?)
+            """, (
+                user_id, str(r.get('ဝယ်သူ', '')), str(r.get('ပစ္စည်း', '')), str(r.get('ရောင်းချမှုပုံစံ', 'CASH')),
+                float(r.get('ရောင်းဈေး', 0)), float(r.get('စပေါ်ငွေ', 0)), float(r.get('ကျန်ငွေ', 0)),
+                0, int(r.get('ကျန်လ', 0)), str(r.get('စတင်ရက်', '')), str(r.get('နောက်ဆုံးရက်', ''))
+            ))
+
+    # Purchases Sheet
+    if 'Purchases' in xls.sheet_names:
+        df_purchases = pd.read_excel(xls, 'Purchases')
+        cursor.execute("DELETE FROM purchases WHERE user_id=?", (user_id,))
+        for _, r in df_purchases.iterrows():
+            cursor.execute("""
+                INSERT INTO purchases (user_id, item_name, quantity, buy_price, total_cost, date)
+                VALUES (?, ?, ?, ?, ?, ?)
+            """, (
+                user_id, str(r.get('ပစ္စည်း', '')), int(r.get('အရေအတွက်', 1)),
+                float(r.get('ဝယ်ဈေး', 0)), float(r.get('စုစုပေါင်းစရိတ်', 0)), str(r.get('ရက်စွဲ', ''))
+            ))
+
+    conn.commit()
+    conn.close()
+
 # Button နှိပ်မှုများကို တုံ့ပြန်ခြင်း
 async def button_click_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
     query = update.callback_query
+    user_id = update.effective_user.id
     await query.answer()
 
-    # Start နှိပ်ပြီး Command မီနူးကြည့်ရန် ခလုတ်နှိပ်ပါက
+    # 1. Command မီနူးများ ကြည့်ရန် ခလုတ်
     if query.data == "show_commands":
         welcome_text = (
             "🛍️ **အသုံးပြုနိုင်သော Command များ အပြည့်အစုံ:**\n\n"
@@ -418,41 +479,4 @@ async def button_click_handler(update: Update, context: ContextTypes.DEFAULT_TYP
             "`/list` - အရစ်ကျ ကျန်သူများ စာရင်းကြည့်ရန်\n"
             "`/monthly_report <YYYY-MM>` - လချုပ် ကြည့်ရန် *(ဥပမာ: `/monthly_report 2026-07`)*\n\n"
             "📁 **၆။ Excel & Backup:**\n"
-            "`/export` - Excel File ထုတ်ယူရန်\n"
-            "`/backup` - Database Backup ထုတ်ယူရန်"
-        )
-        await query.edit_message_text(welcome_text, parse_mode='Markdown')
-
-    # Restore Button နှိပ်ပါက
-    elif query.data.startswith("restore_"):
-        file_id = query.data.replace("restore_", "")
-        file = await context.bot.get_file(file_id)
-        await file.download_to_drive(custom_path=DB_NAME)
-        await query.edit_message_text("✅ **Database စာရင်းများ ပြန်လည် Recover (Restore) လုပ်ဆောင်ပြီးပါပြီ!**")
-
-# --- 5. MAIN EXECUTION ---
-if __name__ == '__main__':
-    keep_alive()
-
-    TOKEN = os.getenv("BOT_TOKEN", "8939067464:AAFwfWTwtzJGlCS-Vh3aUlt55NRS2tgY4wg")
-    
-    app = ApplicationBuilder().token(TOKEN).build()
-    
-    app.add_handler(CommandHandler("start", start))
-    app.add_handler(CommandHandler("buy", buy_item))
-    app.add_handler(CommandHandler("sell_cash", sell_cash))
-    app.add_handler(CommandHandler("sell_installment", sell_installment))
-    app.add_handler(CommandHandler("pay", pay_installment))
-    app.add_handler(CommandHandler("stock", check_stock))
-    app.add_handler(CommandHandler("monthly_report", monthly_report))
-    app.add_handler(CommandHandler("list", list_all))
-    app.add_handler(CommandHandler("export", export_excel))
-    app.add_handler(CommandHandler("backup", backup_db))
-    
-    # Files & Buttons
-    app.add_handler(MessageHandler(filters.Document.ALL, handle_document))
-    app.add_handler(CallbackQueryHandler(button_click_handler))
-    
-    print("Shop Bot စတင်ပွင့်နေပါပြီ...")
-    app.run_polling()
-    
+            "`/export` - Exce
