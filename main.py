@@ -479,4 +479,4 @@ async def button_click_handler(update: Update, context: ContextTypes.DEFAULT_TYP
     elif query.data == "show_restore_info":
         info_text = (
             "🔄 **Recover (Restore) ပြုလုပ်နည်း အဆင့်ဆင့်:**\n\n"
-        
+    
