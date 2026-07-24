@@ -518,7 +518,7 @@ async def backup(update: Update, context: ContextTypes.DEFAULT_TYPE):
 async def ping(update: Update, context: ContextTypes.DEFAULT_TYPE):
     await update.message.reply_text("🏓 **Pong! Bot သည် အလုပ်လုပ်နေဆဲ ဖြစ်ပါသည်။**")
 
-# Start
+# Start Command
 async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
     msg = (
         "🛍️ **အသုံးပြုနိုင်သော Command များ (ထိလိုက်ပါက Copy ရပါသည်):**\n\n"
@@ -527,4 +527,53 @@ async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
         "💵 **၂။ လက်ငင်း ရောင်းချခြင်း:**\n"
         "`/sell_cash AungAung | iPhone 13 | 1500000`\n\n"
         "⏳ **၃။ အရစ်ကျ ရောင်းချခြင်း:**\n"
-   
+        "`/sell_installment MgMg | Phone | 1500000 | 300000 | 100000`\n\n"
+        "💰 **၄။ အရစ်ကျ ငွေလာဆပ်ခြင်း:**\n"
+        "`/pay MgMg 100000`\n\n"
+        "📊 **၅။ စာရင်းများ စစ်ဆေးခြင်း:**\n"
+        "`/stock` - Stock စာရင်းကြည့်ရန်\n"
+        "`/list` - အရစ်ကျကျန်သူများ စာရင်းကြည့်ရန်\n"
+        "`/monthly_report 2026-07` - လချုပ်ကြည့်ရန်\n\n"
+        "🗑️ **၆။ စာရင်းမှား ဖျက်ခြင်း:**\n"
+        "`/delete_sale 1` - အရောင်း ID ဖြင့် စာရင်းတစ်ခုဖျက်ရန်\n"
+        "`/delete_item iPhone 13` - Stock ပစ္စည်းတစ်ခုဖျက်ရန်\n"
+        "`/reset_all` - **စာရင်း အားလုံး ဖျက်ပစ်ရန်**\n\n"
+        "📁 **၇။ Excel & Backup:**\n"
+        "`/export` - Excel File ထုတ်ယူရန်\n"
+        "`/import_excel` - Excel မှ စာရင်းများ ပြန်လည်ပြင်ဆင်ရန်\n"
+        "`/backup` - Database Backup ယူရန်\n"
+        "`/ping` - Bot အခြေအနေ စစ်ရန်"
+    )
+    await update.message.reply_text(msg, parse_mode="Markdown")
+
+# Main Function
+def main():
+    app = ApplicationBuilder().token(BOT_TOKEN).build()
+
+    app.add_handler(CommandHandler("start", start))
+    app.add_handler(CommandHandler("buy", buy))
+    app.add_handler(CommandHandler("sell_cash", sell_cash))
+    app.add_handler(CommandHandler("sell_installment", sell_installment))
+    app.add_handler(CommandHandler("pay", pay))
+    app.add_handler(CommandHandler("stock", stock))
+    app.add_handler(CommandHandler("list", list_pending))
+    app.add_handler(CommandHandler("monthly_report", monthly_report))
+    app.add_handler(CommandHandler("delete_sale", delete_sale))
+    app.add_handler(CommandHandler("delete_item", delete_item))
+    app.add_handler(CommandHandler("reset_all", reset_all))
+    app.add_handler(CommandHandler("export", export_excel))
+    app.add_handler(CommandHandler("import_excel", import_excel_info))
+    app.add_handler(CommandHandler("backup", backup))
+    app.add_handler(CommandHandler("ping", ping))
+
+    # Callback Query Handlers
+    app.add_handler(CallbackQueryHandler(reset_callback_handler))
+
+    # Excel File Handler
+    app.add_handler(MessageHandler(filters.Document.MimeType("application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"), handle_excel_upload))
+
+    print("Bot is running...")
+    app.run_polling()
+
+if __name__ == '__main__':
+    main()
