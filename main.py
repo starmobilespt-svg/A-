@@ -6,8 +6,15 @@ import threading
 import pandas as pd
 from datetime import datetime
 from flask import Flask
-from telegram import Update
-from telegram.ext import ApplicationBuilder, CommandHandler, MessageHandler, filters, ContextTypes
+from telegram import Update, InlineKeyboardButton, InlineKeyboardMarkup
+from telegram.ext import (
+    ApplicationBuilder, 
+    CommandHandler, 
+    MessageHandler, 
+    CallbackQueryHandler, 
+    filters, 
+    ContextTypes
+)
 
 # Logging setup
 logging.basicConfig(
@@ -59,6 +66,7 @@ def init_db():
             customer_name TEXT,
             item_name TEXT,
             sale_type TEXT,
+            quantity INTEGER DEFAULT 1,
             total_sale_price REAL,
             down_payment REAL,
             remaining_amount REAL,
@@ -74,31 +82,21 @@ def init_db():
 init_db()
 
 # --- 3. BOT COMMAND HANDLERS ---
-async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    welcome_text = (
-        "🛍️ **အရောင်း/အဝယ် နှင့် အရစ်ကျ စာရင်းကိုင် Bot မှ ကြိုဆိုပါတယ်။**\n\n"
-        "**အသုံးပြုနိုင်သော Command များ:**\n\n"
-        "📦 **၁။ အပြင်မှ ပစ္စည်းဝယ်ယူခြင်း:**\n"
-        "`/buy <ပစ္စည်းအမည်> | <အရေအတွက်> | <ဝယ်ဈေး>`\n"
-        "*(ဥပမာ: `/buy iPhone 13 | 2 | 1200000`)*\n\n"
-        "💵 **၂။ လက်ငင်း ရောင်းချခြင်း:**\n"
-        "`/sell_cash <ဝယ်သူနာမည်> | <ပစ္စည်းအမည်> | <ရောင်းဈေး>`\n"
-        "*(ဥပမာ: `/sell_cash AungAung | iPhone 13 | 1500000`)*\n\n"
-        "⏳ **၃။ အရစ်ကျ ရောင်းချခြင်း:**\n"
-        "`/sell_installment <ဝယ်သူနာမည်> | <ပစ္စည်းအမည်> | <စုစုပေါင်းရောင်းဈေး> | <စပေါ်ငွေ> | <တစ်လ ပုံမှန်ပေးရမည့်ငွေ>`\n"
-        "*(ဥပမာ: `/sell_installment MgMg | Phone | 1500000 | 300000 | 100000`)*\n\n"
-        "💰 **၄။ အရစ်ကျ ငွေလာဆပ်ခြင်း:**\n"
-        "`/pay <ဝယ်သူနာမည်> <ပေးသည့်ပမာဏ>`\n"
-        "*(ဥပမာ: `/pay MgMg 100000`)*\n\n"
-        "📊 **၅။ စာရင်းများ နှင့် လချုပ် ကြည့်ခြင်း:**\n"
-        "`/list` - အရစ်ကျ ကျန်သူများ စာရင်း\n"
-        "`/monthly_report <YYYY-MM>` - လချုပ် ကြည့်ရန် *(ဥပမာ: `/monthly_report 2026-07`)*\n\n"
-        "📁 **၆။ Excel & Backup:**\n"
-        "`/export` - Excel File ထုတ်ယူရန်\n"
-        "`/backup` - Database Backup ထုတ်ယူရန်"
-    )
-    await update.message.reply_text(welcome_text, parse_mode='Markdown')
 
+# /start command (Button သာ ပြမည်)
+async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    keyboard = [
+        [InlineKeyboardButton("📋 Command မီနူးများ ကြည့်ရန်", callback_data="show_commands")]
+    ]
+    reply_markup = InlineKeyboardMarkup(keyboard)
+    await update.message.reply_text(
+        "👋 **မင်္ဂလာပါ! အရောင်း/အဝယ် စာရင်းကိုင် Bot မှ ကြိုဆိုပါတယ်။**\n\n"
+        "အသုံးပြုနိုင်သည့် Command မီနူးများကို ကြည့်ရန် အောက်ပါ ခလုတ်ကို နှိပ်ပါ။",
+        reply_markup=reply_markup,
+        parse_mode='Markdown'
+    )
+
+# 📦 ၁။ အပြင်မှ ပစ္စည်းဝယ်ယူခြင်း /buy
 async def buy_item(update: Update, context: ContextTypes.DEFAULT_TYPE):
     user_id = update.effective_user.id
     raw_text = " ".join(context.args)
@@ -131,6 +129,7 @@ async def buy_item(update: Update, context: ContextTypes.DEFAULT_TYPE):
     except Exception:
         await update.message.reply_text("❌ **ပုံစံ မှားယွင်းနေပါသည်။**\n`/buy <ပစ္စည်းအမည်> | <အရေအတွက်> | <ဝယ်ဈေး>`", parse_mode='Markdown')
 
+# 💵 ၂။ လက်ငင်း ရောင်းချခြင်း /sell_cash
 async def sell_cash(update: Update, context: ContextTypes.DEFAULT_TYPE):
     user_id = update.effective_user.id
     raw_text = " ".join(context.args)
@@ -144,8 +143,8 @@ async def sell_cash(update: Update, context: ContextTypes.DEFAULT_TYPE):
         conn = sqlite3.connect(DB_NAME)
         cursor = conn.cursor()
         cursor.execute("""
-            INSERT INTO sales (user_id, customer_name, item_name, sale_type, total_sale_price, down_payment, remaining_amount, monthly_min_amount, months_left, first_date, last_date)
-            VALUES (?, ?, ?, 'CASH', ?, ?, 0, 0, 0, ?, ?)
+            INSERT INTO sales (user_id, customer_name, item_name, sale_type, quantity, total_sale_price, down_payment, remaining_amount, monthly_min_amount, months_left, first_date, last_date)
+            VALUES (?, ?, ?, 'CASH', 1, ?, ?, 0, 0, 0, ?, ?)
         """, (user_id, customer_name, item_name, sale_price, sale_price, today, today))
         conn.commit()
         conn.close()
@@ -161,6 +160,7 @@ async def sell_cash(update: Update, context: ContextTypes.DEFAULT_TYPE):
     except Exception:
         await update.message.reply_text("❌ **ပုံစံ မှားယွင်းနေပါသည်။**\n`/sell_cash <ဝယ်သူနာမည်> | <ပစ္စည်းအမည်> | <ရောင်းဈေး>`", parse_mode='Markdown')
 
+# ⏳ ၃။ အရစ်ကျ ရောင်းချခြင်း /sell_installment
 async def sell_installment(update: Update, context: ContextTypes.DEFAULT_TYPE):
     user_id = update.effective_user.id
     raw_text = " ".join(context.args)
@@ -179,8 +179,8 @@ async def sell_installment(update: Update, context: ContextTypes.DEFAULT_TYPE):
         conn = sqlite3.connect(DB_NAME)
         cursor = conn.cursor()
         cursor.execute("""
-            INSERT INTO sales (user_id, customer_name, item_name, sale_type, total_sale_price, down_payment, remaining_amount, monthly_min_amount, months_left, first_date, last_date)
-            VALUES (?, ?, ?, 'INSTALLMENT', ?, ?, ?, ?, ?, ?, ?)
+            INSERT INTO sales (user_id, customer_name, item_name, sale_type, quantity, total_sale_price, down_payment, remaining_amount, monthly_min_amount, months_left, first_date, last_date)
+            VALUES (?, ?, ?, 'INSTALLMENT', 1, ?, ?, ?, ?, ?, ?, ?)
         """, (user_id, customer_name, item_name, total_price, down_payment, remaining, monthly_min, months_left, today, today))
         conn.commit()
         conn.close()
@@ -199,6 +199,7 @@ async def sell_installment(update: Update, context: ContextTypes.DEFAULT_TYPE):
     except Exception:
         await update.message.reply_text("❌ **ပုံစံ မှားယွင်းနေပါသည်။**\n`/sell_installment <ဝယ်သူနာမည်> | <ပစ္စည်းအမည်> | <စုစုပေါင်းရောင်းဈေး> | <စပေါ်ငွေ> | <တစ်လ ပုံမှန်ပေးရမည့်ငွေ>`", parse_mode='Markdown')
 
+# 💰 ၄။ အရစ်ကျ ငွေလာဆပ်ခြင်း /pay
 async def pay_installment(update: Update, context: ContextTypes.DEFAULT_TYPE):
     user_id = update.effective_user.id
     try:
@@ -224,10 +225,7 @@ async def pay_installment(update: Update, context: ContextTypes.DEFAULT_TYPE):
     remaining = record[1]
     monthly_min = record[2]
 
-    new_remaining = remaining - paid_amount
-    if new_remaining < 0:
-        new_remaining = 0
-
+    new_remaining = max(0, remaining - paid_amount)
     new_months_left = math.ceil(new_remaining / monthly_min) if monthly_min > 0 else 0
 
     cursor.execute("""
@@ -250,6 +248,42 @@ async def pay_installment(update: Update, context: ContextTypes.DEFAULT_TYPE):
     )
     await update.message.reply_text(msg, parse_mode='Markdown')
 
+# 📊 ၅။ Stock လက်ကျန် စာရင်းကြည့်ရန် /stock
+async def check_stock(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    user_id = update.effective_user.id
+    conn = sqlite3.connect(DB_NAME)
+    cursor = conn.cursor()
+
+    # ဝယ်ယူထားသည်များ
+    cursor.execute("SELECT item_name, SUM(quantity) FROM purchases WHERE user_id=? GROUP BY item_name", (user_id,))
+    purchases = {row[0]: row[1] for row in cursor.fetchall()}
+
+    # ရောင်းထုတ်ထားသည်များ
+    cursor.execute("SELECT item_name, SUM(quantity) FROM sales WHERE user_id=? GROUP BY item_name", (user_id,))
+    sales = {row[0]: row[1] for row in cursor.fetchall()}
+
+    conn.close()
+
+    if not purchases:
+        await update.message.reply_text("📦 လက်ရှိတွင် ဝယ်ယူထားသော Stock ပစ္စည်းများ မရှိသေးပါ။")
+        return
+
+    report = "📦 **ဆိုင်ရှိ ပစ္စည်း Stock လက်ကျန် စာရင်းများ:**\n"
+    report += "━━━━━━━━━━━━━━━━━━\n"
+
+    for item, bought_qty in purchases.items():
+        sold_qty = sales.get(item, 0)
+        stock_left = bought_qty - sold_qty
+        
+        status = "🟢" if stock_left > 0 else "🔴 Stock ကုန်ပြီ"
+        report += f"• **{item}**\n"
+        report += f"  - ဝယ်ယူခဲ့သည်: `{bought_qty}` ခု\n"
+        report += f"  - ရောင်းပြီး: `{sold_qty}` ခု\n"
+        report += f"  - **လက်ကျန်:** `{stock_left}` ခု ({status})\n\n"
+
+    await update.message.reply_text(report, parse_mode='Markdown')
+
+# 📈 ၆။ လချုပ် စာရင်းကြည့်ရန် /monthly_report
 async def monthly_report(update: Update, context: ContextTypes.DEFAULT_TYPE):
     user_id = update.effective_user.id
     if context.args:
@@ -291,6 +325,7 @@ async def monthly_report(update: Update, context: ContextTypes.DEFAULT_TYPE):
     )
     await update.message.reply_text(report, parse_mode='Markdown')
 
+# 📋 ၇။ အရစ်ကျ စာရင်းကြည့်ရန် /list
 async def list_all(update: Update, context: ContextTypes.DEFAULT_TYPE):
     user_id = update.effective_user.id
     conn = sqlite3.connect(DB_NAME)
@@ -309,6 +344,7 @@ async def list_all(update: Update, context: ContextTypes.DEFAULT_TYPE):
     
     await update.message.reply_text(report, parse_mode='Markdown')
 
+# 📊 ၈။ Excel ထုတ်ယူရန် /export
 async def export_excel(update: Update, context: ContextTypes.DEFAULT_TYPE):
     user_id = update.effective_user.id
     conn = sqlite3.connect(DB_NAME)
@@ -327,6 +363,7 @@ async def export_excel(update: Update, context: ContextTypes.DEFAULT_TYPE):
     
     os.remove(excel_file)
 
+# 💾 ၉။ Backup ပြုလုပ်ရန် /backup
 async def backup_db(update: Update, context: ContextTypes.DEFAULT_TYPE):
     if not os.path.exists(DB_NAME):
         await update.message.reply_text("❌ Backup လုပ်ရန် Database မရှိပါ။")
@@ -338,22 +375,65 @@ async def backup_db(update: Update, context: ContextTypes.DEFAULT_TYPE):
     with open(DB_NAME, 'rb') as f:
         await update.message.reply_document(document=f, filename=backup_filename, caption="📦 Shop Database Backup File.")
 
-async def restore_db(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    document = update.message.document
-    if not document or not document.file_name.endswith('.db'):
-        await update.message.reply_text("❌ ကျေးဇူးပြု၍ `.db` Backup file ပို့ပေးပါ။")
-        return
+# --- 4. BUTTON CALLBACK & FILE HANDLERS ---
 
-    file = await context.bot.get_file(document.file_id)
-    await file.download_to_drive(custom_path=DB_NAME)
-    await update.message.reply_text("✅ **Database ပြန်လည် Recover လုပ်ဆောင်ပြီးပါပြီ!**")
+# Backup File ပို့လာပါက Button ပြပေးခြင်း
+async def handle_document(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    doc = update.message.document
+    if doc and doc.file_name and doc.file_name.endswith('.db'):
+        keyboard = [
+            [InlineKeyboardButton("🔄 စာရင်းများ ပြန်လည် Recover (Restore) လုပ်မည်", callback_data=f"restore_{doc.file_id}")]
+        ]
+        reply_markup = InlineKeyboardMarkup(keyboard)
+        await update.message.reply_text(
+            "📦 **Backup File ရရှိပါသည်။**\n"
+            "စာရင်းများကို ပြန်လည် Recover လုပ်လိုပါက အောက်ပါ ခလုတ်ကို နှိပ်ပါ။",
+            reply_markup=reply_markup,
+            parse_mode='Markdown'
+        )
 
-# --- 4. MAIN EXECUTION ---
+# Button နှိပ်မှုများကို တုံ့ပြန်ခြင်း
+async def button_click_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    query = update.callback_query
+    await query.answer()
+
+    # Start နှိပ်ပြီး Command မီနူးကြည့်ရန် ခလုတ်နှိပ်ပါက
+    if query.data == "show_commands":
+        welcome_text = (
+            "🛍️ **အသုံးပြုနိုင်သော Command များ အပြည့်အစုံ:**\n\n"
+            "📦 **၁။ အပြင်မှ ပစ္စည်းဝယ်ယူခြင်း:**\n"
+            "`/buy <ပစ္စည်းအမည်> | <အရေအတွက်> | <ဝယ်ဈေး>`\n"
+            "*(ဥပမာ: `/buy iPhone 13 | 2 | 1200000`)*\n\n"
+            "💵 **၂။ လက်ငင်း ရောင်းချခြင်း:**\n"
+            "`/sell_cash <ဝယ်သူနာမည်> | <ပစ္စည်းအမည်> | <ရောင်းဈေး>`\n"
+            "*(ဥပမာ: `/sell_cash AungAung | iPhone 13 | 1500000`)*\n\n"
+            "⏳ **၃။ အရစ်ကျ ရောင်းချခြင်း:**\n"
+            "`/sell_installment <ဝယ်သူနာမည်> | <ပစ္စည်းအမည်> | <စုစုပေါင်းရောင်းဈေး> | <စပေါ်ငွေ> | <တစ်လ ပုံမှန်ပေးရမည့်ငွေ>`\n"
+            "*(ဥပမာ: `/sell_installment MgMg | Phone | 1500000 | 300000 | 100000`)*\n\n"
+            "💰 **၄။ အရစ်ကျ ငွေလာဆပ်ခြင်း:**\n"
+            "`/pay <ဝယ်သူနာမည်> <ပေးသည့်ပမာဏ>`\n"
+            "*(ဥပမာ: `/pay MgMg 100000`)*\n\n"
+            "📊 **၅။ စာရင်းများ/Stock ကြည့်ခြင်း:**\n"
+            "`/stock` - ဆိုင်ရှိ ပစ္စည်း Stock လက်ကျန်ကြည့်ရန်\n"
+            "`/list` - အရစ်ကျ ကျန်သူများ စာရင်းကြည့်ရန်\n"
+            "`/monthly_report <YYYY-MM>` - လချုပ် ကြည့်ရန် *(ဥပမာ: `/monthly_report 2026-07`)*\n\n"
+            "📁 **၆။ Excel & Backup:**\n"
+            "`/export` - Excel File ထုတ်ယူရန်\n"
+            "`/backup` - Database Backup ထုတ်ယူရန်"
+        )
+        await query.edit_message_text(welcome_text, parse_mode='Markdown')
+
+    # Restore Button နှိပ်ပါက
+    elif query.data.startswith("restore_"):
+        file_id = query.data.replace("restore_", "")
+        file = await context.bot.get_file(file_id)
+        await file.download_to_drive(custom_path=DB_NAME)
+        await query.edit_message_text("✅ **Database စာရင်းများ ပြန်လည် Recover (Restore) လုပ်ဆောင်ပြီးပါပြီ!**")
+
+# --- 5. MAIN EXECUTION ---
 if __name__ == '__main__':
-    # 1. Start Flask web server for Keep-Alive Ping
     keep_alive()
 
-    # 2. Get Bot Token
     TOKEN = os.getenv("BOT_TOKEN", "8939067464:AAFwfWTwtzJGlCS-Vh3aUlt55NRS2tgY4wg")
     
     app = ApplicationBuilder().token(TOKEN).build()
@@ -363,11 +443,15 @@ if __name__ == '__main__':
     app.add_handler(CommandHandler("sell_cash", sell_cash))
     app.add_handler(CommandHandler("sell_installment", sell_installment))
     app.add_handler(CommandHandler("pay", pay_installment))
+    app.add_handler(CommandHandler("stock", check_stock))
     app.add_handler(CommandHandler("monthly_report", monthly_report))
     app.add_handler(CommandHandler("list", list_all))
     app.add_handler(CommandHandler("export", export_excel))
     app.add_handler(CommandHandler("backup", backup_db))
-    app.add_handler(MessageHandler(filters.Document.ALL & filters.Caption(["/restore"]), restore_db))
+    
+    # Files & Buttons
+    app.add_handler(MessageHandler(filters.Document.ALL, handle_document))
+    app.add_handler(CallbackQueryHandler(button_click_handler))
     
     print("Shop Bot စတင်ပွင့်နေပါပြီ...")
     app.run_polling()
