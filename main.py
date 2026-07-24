@@ -83,7 +83,6 @@ init_db()
 
 # --- 3. BOT COMMAND HANDLERS ---
 
-# /start command
 async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
     keyboard = [
         [InlineKeyboardButton("📋 Command မီနူးများ ကြည့်ရန်", callback_data="show_commands")],
@@ -97,7 +96,6 @@ async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
         parse_mode='Markdown'
     )
 
-# 📦 ၁။ အပြင်မှ ပစ္စည်းဝယ်ယူခြင်း /buy
 async def buy_item(update: Update, context: ContextTypes.DEFAULT_TYPE):
     user_id = update.effective_user.id
     raw_text = " ".join(context.args)
@@ -130,7 +128,6 @@ async def buy_item(update: Update, context: ContextTypes.DEFAULT_TYPE):
     except Exception:
         await update.message.reply_text("❌ **ပုံစံ မှားယွင်းနေပါသည်။**\n`/buy <ပစ္စည်းအမည်> | <အရေအတွက်> | <ဝယ်ဈေး>`", parse_mode='Markdown')
 
-# 💵 ၂။ လက်ငင်း ရောင်းချခြင်း /sell_cash
 async def sell_cash(update: Update, context: ContextTypes.DEFAULT_TYPE):
     user_id = update.effective_user.id
     raw_text = " ".join(context.args)
@@ -161,7 +158,6 @@ async def sell_cash(update: Update, context: ContextTypes.DEFAULT_TYPE):
     except Exception:
         await update.message.reply_text("❌ **ပုံစံ မှားယွင်းနေပါသည်။**\n`/sell_cash <ဝယ်သူနာမည်> | <ပစ္စည်းအမည်> | <ရောင်းဈေး>`", parse_mode='Markdown')
 
-# ⏳ ၃။ အရစ်ကျ ရောင်းချခြင်း /sell_installment
 async def sell_installment(update: Update, context: ContextTypes.DEFAULT_TYPE):
     user_id = update.effective_user.id
     raw_text = " ".join(context.args)
@@ -200,7 +196,6 @@ async def sell_installment(update: Update, context: ContextTypes.DEFAULT_TYPE):
     except Exception:
         await update.message.reply_text("❌ **ပုံစံ မှားယွင်းနေပါသည်။**\n`/sell_installment <ဝယ်သူနာမည်> | <ပစ္စည်းအမည်> | <စုစုပေါင်းရောင်းဈေး> | <စပေါ်ငွေ> | <တစ်လ ပုံမှန်ပေးရမည့်ငွေ>`", parse_mode='Markdown')
 
-# 💰 ၄။ အရစ်ကျ ငွေလာဆပ်ခြင်း /pay
 async def pay_installment(update: Update, context: ContextTypes.DEFAULT_TYPE):
     user_id = update.effective_user.id
     try:
@@ -249,7 +244,6 @@ async def pay_installment(update: Update, context: ContextTypes.DEFAULT_TYPE):
     )
     await update.message.reply_text(msg, parse_mode='Markdown')
 
-# 📊 ၅။ Stock လက်ကျန် စာရင်းကြည့်ရန် /stock
 async def check_stock(update: Update, context: ContextTypes.DEFAULT_TYPE):
     user_id = update.effective_user.id
     conn = sqlite3.connect(DB_NAME)
@@ -267,22 +261,17 @@ async def check_stock(update: Update, context: ContextTypes.DEFAULT_TYPE):
         await update.message.reply_text("📦 လက်ရှိတွင် ဝယ်ယူထားသော Stock ပစ္စည်းများ မရှိသေးပါ။")
         return
 
-    report = "📦 **ဆိုင်ရှိ ပစ္စည်း Stock လက်ကျန် စာရင်းများ:**\n"
-    report += "━━━━━━━━━━━━━━━━━━\n"
+    report = "📦 **ဆိုင်ရှိ ပစ္စည်း Stock လက်ကျန် စာရင်းများ:**\n━━━━━━━━━━━━━━━━━━\n"
 
     for item, bought_qty in purchases.items():
         sold_qty = sales.get(item, 0)
         stock_left = bought_qty - sold_qty
         
         status = "🟢" if stock_left > 0 else "🔴 Stock ကုန်ပြီ"
-        report += f"• **{item}**\n"
-        report += f"  - ဝယ်ယူခဲ့သည်: `{bought_qty}` ခု\n"
-        report += f"  - ရောင်းပြီး: `{sold_qty}` ခု\n"
-        report += f"  - **လက်ကျန်:** `{stock_left}` ခု ({status})\n\n"
+        report += f"• **{item}**\n  - ဝယ်ယူခဲ့သည်: `{bought_qty}` ခု\n  - ရောင်းပြီး: `{sold_qty}` ခု\n  - **လက်ကျန်:** `{stock_left}` ခု ({status})\n\n"
 
     await update.message.reply_text(report, parse_mode='Markdown')
 
-# 📈 ၆။ လချုပ် စာရင်းကြည့်ရန် /monthly_report
 async def monthly_report(update: Update, context: ContextTypes.DEFAULT_TYPE):
     user_id = update.effective_user.id
     if context.args:
@@ -324,7 +313,6 @@ async def monthly_report(update: Update, context: ContextTypes.DEFAULT_TYPE):
     )
     await update.message.reply_text(report, parse_mode='Markdown')
 
-# 📋 ၇။ အရစ်ကျ စာရင်းကြည့်ရန် /list
 async def list_all(update: Update, context: ContextTypes.DEFAULT_TYPE):
     user_id = update.effective_user.id
     conn = sqlite3.connect(DB_NAME)
@@ -343,7 +331,6 @@ async def list_all(update: Update, context: ContextTypes.DEFAULT_TYPE):
     
     await update.message.reply_text(report, parse_mode='Markdown')
 
-# 📊 ၈။ Excel ထုတ်ယူရန် /export
 async def export_excel(update: Update, context: ContextTypes.DEFAULT_TYPE):
     user_id = update.effective_user.id
     conn = sqlite3.connect(DB_NAME)
@@ -358,11 +345,10 @@ async def export_excel(update: Update, context: ContextTypes.DEFAULT_TYPE):
         df_buy.to_excel(writer, sheet_name='Purchases', index=False)
 
     with open(excel_file, 'rb') as f:
-        await update.message.reply_document(document=f, filename=excel_file, caption="📊 အရောင်း/အဝယ် စာရင်း Excel File (ဒီ File ထဲမှာ ပြင်ဆင်ပြီး Bot ထံ ပြန်ပို့၍ Restore လုပ်နိုင်ပါသည်။)")
+        await update.message.reply_document(document=f, filename=excel_file, caption="📊 အရောင်း/အဝယ် စာရင်း Excel File")
     
     os.remove(excel_file)
 
-# 💾 ၉။ Backup /backup command
 async def send_backup_file(context, chat_id):
     if not os.path.exists(DB_NAME):
         await context.bot.send_message(chat_id=chat_id, text="❌ Backup လုပ်ရန် Database မရှိသေးပါ။")
@@ -382,15 +368,13 @@ async def send_backup_file(context, chat_id):
 async def backup_db(update: Update, context: ContextTypes.DEFAULT_TYPE):
     await send_backup_file(context, update.effective_chat.id)
 
-# --- 4. BUTTON CALLBACK & FILE HANDLERS (EXCEL & DB RESTORE) ---
+# --- 4. BUTTON CALLBACK & FILE HANDLERS ---
 
-# Document Files (Excel / DB) ပို့လာပါက စစ်ဆေးခြင်း
 async def handle_document(update: Update, context: ContextTypes.DEFAULT_TYPE):
     doc = update.message.document
     if not doc or not doc.file_name:
         return
 
-    # ၁။ .db Backup File ဖြစ်လျှင်
     if doc.file_name.endswith('.db'):
         keyboard = [
             [InlineKeyboardButton("🔄 စာရင်းများ ပြန်လည် Recover (Restore) လုပ်မည်", callback_data=f"do_restore_db_{doc.file_id}")]
@@ -403,7 +387,6 @@ async def handle_document(update: Update, context: ContextTypes.DEFAULT_TYPE):
             parse_mode='Markdown'
         )
 
-    # ၂။ Excel File (.xlsx) ဖြစ်လျှင်
     elif doc.file_name.endswith('.xlsx'):
         keyboard = [
             [InlineKeyboardButton("🔄 ပြင်ဆင်ထားသော Excel မှ စာရင်းများ Recover လုပ်မည်", callback_data=f"do_restore_excel_{doc.file_id}")]
@@ -416,13 +399,11 @@ async def handle_document(update: Update, context: ContextTypes.DEFAULT_TYPE):
             parse_mode='Markdown'
         )
 
-# Excel မှ စာရင်းများကို Database ထဲသို့ Update/Restore လုပ်ပေးသည့် Function
 def restore_from_excel_file(excel_file_path, user_id):
     xls = pd.ExcelFile(excel_file_path)
     conn = sqlite3.connect(DB_NAME)
     cursor = conn.cursor()
 
-    # Sales Sheet
     if 'Sales' in xls.sheet_names:
         df_sales = pd.read_excel(xls, 'Sales')
         cursor.execute("DELETE FROM sales WHERE user_id=?", (user_id,))
@@ -436,7 +417,6 @@ def restore_from_excel_file(excel_file_path, user_id):
                 0, int(r.get('ကျန်လ', 0)), str(r.get('စတင်ရက်', '')), str(r.get('နောက်ဆုံးရက်', ''))
             ))
 
-    # Purchases Sheet
     if 'Purchases' in xls.sheet_names:
         df_purchases = pd.read_excel(xls, 'Purchases')
         cursor.execute("DELETE FROM purchases WHERE user_id=?", (user_id,))
@@ -452,31 +432,51 @@ def restore_from_excel_file(excel_file_path, user_id):
     conn.commit()
     conn.close()
 
-# Button နှိပ်မှုများကို တုံ့ပြန်ခြင်း
 async def button_click_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
     query = update.callback_query
     user_id = update.effective_user.id
     await query.answer()
 
-    # 1. Command မီနူးများ ကြည့်ရန် ခလုတ်
     if query.data == "show_commands":
         welcome_text = (
             "🛍️ **အသုံးပြုနိုင်သော Command များ အပြည့်အစုံ:**\n\n"
             "📦 **၁။ အပြင်မှ ပစ္စည်းဝယ်ယူခြင်း:**\n"
-            "`/buy <ပစ္စည်းအမည်> | <အရေအတွက်> | <ဝယ်ဈေး>`\n"
-            "*(ဥပမာ: `/buy iPhone 13 | 2 | 1200000`)*\n\n"
+            "`/buy <ပစ္စည်းအမည်> | <အရေအတွက်> | <ဝယ်ဈေး>`\n\n"
             "💵 **၂။ လက်ငင်း ရောင်းချခြင်း:**\n"
-            "`/sell_cash <ဝယ်သူနာမည်> | <ပစ္စည်းအမည်> | <ရောင်းဈေး>`\n"
-            "*(ဥပမာ: `/sell_cash AungAung | iPhone 13 | 1500000`)*\n\n"
+            "`/sell_cash <ဝယ်သူနာမည်> | <ပစ္စည်းအမည်> | <ရောင်းဈေး>`\n\n"
             "⏳ **၃။ အရစ်ကျ ရောင်းချခြင်း:**\n"
-            "`/sell_installment <ဝယ်သူနာမည်> | <ပစ္စည်းအမည်> | <စုစုပေါင်းရောင်းဈေး> | <စပေါ်ငွေ> | <တစ်လ ပုံမှန်ပေးရမည့်ငွေ>`\n"
-            "*(ဥပမာ: `/sell_installment MgMg | Phone | 1500000 | 300000 | 100000`)*\n\n"
+            "`/sell_installment <ဝယ်သူနာမည်> | <ပစ္စည်းအမည်> | <စုစုပေါင်းရောင်းဈေး> | <စပေါ်ငွေ> | <တစ်လ ပုံမှန်ပေးရမည့်ငွေ>`\n\n"
             "💰 **၄။ အရစ်ကျ ငွေလာဆပ်ခြင်း:**\n"
-            "`/pay <ဝယ်သူနာမည်> <ပေးသည့်ပမာဏ>`\n"
-            "*(ဥပမာ: `/pay MgMg 100000`)*\n\n"
+            "`/pay <ဝယ်သူနာမည်> <ပေးသည့်ပမာဏ>`\n\n"
             "📊 **၅။ စာရင်းများ/Stock ကြည့်ခြင်း:**\n"
             "`/stock` - ဆိုင်ရှိ ပစ္စည်း Stock လက်ကျန်ကြည့်ရန်\n"
             "`/list` - အရစ်ကျ ကျန်သူများ စာရင်းကြည့်ရန်\n"
-            "`/monthly_report <YYYY-MM>` - လချုပ် ကြည့်ရန် *(ဥပမာ: `/monthly_report 2026-07`)*\n\n"
+            "`/monthly_report <YYYY-MM>` - လချုပ် ကြည့်ရန်\n\n"
             "📁 **၆။ Excel & Backup:**\n"
-            "`/export` - Exce
+            "`/export` - Excel File ထုတ်ယူရန်\n"
+            "`/backup` - Database Backup ထုတ်ယူရန်"
+        )
+        await query.message.reply_text(welcome_text, parse_mode='Markdown')
+
+    elif query.data == "show_backup_menu":
+        keyboard = [
+            [InlineKeyboardButton("📥 Backup File ရယူမည်", callback_data="download_backup")],
+            [InlineKeyboardButton("📤 Recover (Restore) ပြုလုပ်နည်း", callback_data="show_restore_info")]
+        ]
+        reply_markup = InlineKeyboardMarkup(keyboard)
+        await query.message.reply_text(
+            "⚙️ **Backup & Restore စနစ်:**\n\n"
+            "• **Backup File ရယူရန်:** အောက်ပါ ခလုတ်ကို နှိပ်ပါ\n"
+            "• **Restore ပြုလုပ်ရန်:** `.db` Backup File သို့မဟုတ် `.xlsx` Excel File ကို Bot ဆီသို့ ပို့ပေးပါ",
+            reply_markup=reply_markup,
+            parse_mode='Markdown'
+        )
+
+    elif query.data == "download_backup":
+        await query.message.reply_text("💾 Backup File ကို ထုတ်ပေးနေပါသည်။...")
+        await send_backup_file(context, query.message.chat_id)
+
+    elif query.data == "show_restore_info":
+        info_text = (
+            "🔄 **Recover (Restore) ပြုလုပ်နည်း အဆင့်ဆင့်:**\n\n"
+        
