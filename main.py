@@ -117,7 +117,7 @@ init_db()
 def get_db():
     return sqlite3.connect(DB_FILE)
 
-# Custom Bottom Keyboard Menu (တောင်းဆိုထားသည့်အတိုင်း နေရာပြန်ချထားသည်)
+# Custom Bottom Keyboard Menu
 def get_main_keyboard():
     keyboard = [
         [KeyboardButton("📦 ဝယ်ယူမည်"), KeyboardButton("💸 အသုံးစရိတ်")],
@@ -201,7 +201,7 @@ async def add_balance(update: Update, context: ContextTypes.DEFAULT_TYPE):
     except Exception as e:
         await update.message.reply_text(f"❌ အမှားအယွင်းရှိပါသည်: {str(e)}")
 
-# Buy Command (Records Purchases to accurately track Cash Outflow)
+# Buy Command
 async def buy(update: Update, context: ContextTypes.DEFAULT_TYPE):
     try:
         args = " ".join(context.args).split("|")
@@ -225,7 +225,6 @@ async def buy(update: Update, context: ContextTypes.DEFAULT_TYPE):
         else:
             cursor.execute("INSERT INTO inventory (item_name, quantity, cost_price) VALUES (?, ?, ?)", (item_name, qty, cost_price))
 
-        # Record Total Cost in Purchases Table for accurate Cash Balance
         total_purchase_cost = qty * cost_price
         cursor.execute("INSERT INTO purchases (item_name, quantity, total_cost, date) VALUES (?, ?, ?, ?)", (item_name, qty, total_purchase_cost, today))
 
@@ -261,7 +260,7 @@ async def add_expense(update: Update, context: ContextTypes.DEFAULT_TYPE):
     except Exception as e:
         await update.message.reply_text(f"❌ အမှားအယွင်းရှိပါသည်: {str(e)}")
 
-# Add Old Stock Command (Doesn't affect monthly purchases cash flow)
+# Add Old Stock Command
 async def add_stock(update: Update, context: ContextTypes.DEFAULT_TYPE):
     try:
         args = " ".join(context.args).split("|")
@@ -476,7 +475,8 @@ async def pay(update: Update, context: ContextTypes.DEFAULT_TYPE):
             msg = f"⚠️ **'{target_str}' အမည်ဖြင့် စာရင်း ({len(rows)}) ခု ရှိနေပါသည်:**\n\n"
             for r in rows:
                 rem = r[3] - r[4]
-                msg += f"🆔 ID: `{r[0]}` | {r[1]} ({r[2]})\n  ကျန်ငွေ: `{rem:,.0f}`\n👉 `/pay {r[0]} | {amount:,.0f}`\n\n"
+                gift_info = f" (🎁 {r[5]})" if r[5] else ""
+                msg += f"🆔 ID: `{r[0]}` | {r[1]} ({r[2]}{gift_info})\n  ကျန်ငွေ: `{rem:,.0f}`\n👉 `/pay {r[0]} | {amount:,.0f}`\n\n"
             await update.message.reply_text(msg, parse_mode="Markdown")
             conn.close()
             return
@@ -496,7 +496,6 @@ async def pay(update: Update, context: ContextTypes.DEFAULT_TYPE):
     except Exception as e:
         await update.message.reply_text(f"❌ Error: {str(e)}")
 
-# Updated Stock with Total Value
 async def stock(update: Update, context: ContextTypes.DEFAULT_TYPE):
     conn = get_db()
     cursor = conn.cursor()
@@ -516,7 +515,6 @@ async def stock(update: Update, context: ContextTypes.DEFAULT_TYPE):
     
     msg += "\n───────────────────\n"
     msg += f"📦 **စုစုပေါင်း Stock တန်ဖိုးငွေ:** `{total_stock_value:,.0f}` MMK\n"
-    msg += "\n💡 *Stock ဖျက်လိုပါက:* `/delete_item <ပစ္စည်းအမည်>`"
     await update.message.reply_text(msg, parse_mode="Markdown")
 
 async def list_pending(update: Update, context: ContextTypes.DEFAULT_TYPE):
@@ -531,10 +529,8 @@ async def list_pending(update: Update, context: ContextTypes.DEFAULT_TYPE):
     msg = "⏳ **ကြွေးကျန်သူများ စာရင်း:**\n\n"
     for r in rows:
         msg += f"🆔 ID: `{r[0]}` | 👤 **{r[1]}** ({r[2]})\n  ကျန်ငွေ: `{r[3] - r[4]:,.0f}` MMK\n\n"
-    msg += "💡 *စာရင်းမှား၍ ဖျက်လိုပါက:* `/delete_sale <ID>`"
     await update.message.reply_text(msg, parse_mode="Markdown")
 
-# Report Function (Month / Year Support + Cash Balance)
 async def report(update: Update, context: ContextTypes.DEFAULT_TYPE):
     try:
         args = context.args
@@ -554,7 +550,6 @@ async def report(update: Update, context: ContextTypes.DEFAULT_TYPE):
         conn = get_db()
         cursor = conn.cursor()
 
-        # Sales Data
         cursor.execute(f'''
             SELECT s.item_name, s.total_price, s.paid_amount, COALESCE(i.cost_price, 0)
             FROM sales s
@@ -563,22 +558,18 @@ async def report(update: Update, context: ContextTypes.DEFAULT_TYPE):
         ''', (period,))
         sales_rows = cursor.fetchall()
 
-        # Expenses Data
         cursor.execute(f"SELECT SUM(amount) FROM expenses WHERE strftime('{date_format}', date) = ?", (period,))
         expense_row = cursor.fetchone()
         total_expense = expense_row[0] if expense_row[0] else 0.0
 
-        # Capital Added
         cursor.execute(f"SELECT SUM(amount) FROM capital WHERE strftime('{date_format}', date) = ?", (period,))
         capital_row = cursor.fetchone()
         added_capital = capital_row[0] if capital_row[0] else 0.0
 
-        # Purchases Cash Outflow
         cursor.execute(f"SELECT SUM(total_cost) FROM purchases WHERE strftime('{date_format}', date) = ?", (period,))
         purchase_row = cursor.fetchone()
         total_purchases_cash = purchase_row[0] if purchase_row[0] else 0.0
 
-        # Current Stock Value (Overall)
         cursor.execute("SELECT SUM(quantity * cost_price) FROM inventory WHERE quantity > 0")
         stock_row = cursor.fetchone()
         total_current_stock_value = stock_row[0] if stock_row[0] else 0.0
@@ -596,7 +587,6 @@ async def report(update: Update, context: ContextTypes.DEFAULT_TYPE):
         net_profit = total_sales_value - total_cogs - total_expense
         profit_status = "🟢 အမြတ်" if net_profit >= 0 else "🔴 အရှုံး"
 
-        # Cash Balance for the period = Capital + Cash in - Expenses - Purchases Cash Out
         cash_balance = added_capital + total_collected_cash - total_expense - total_purchases_cash
 
         msg = f"📊 **{period_label} အရှုံးအမြတ်နှင့် လက်ကျန် စာရင်း**\n\n"
@@ -618,10 +608,11 @@ async def report(update: Update, context: ContextTypes.DEFAULT_TYPE):
     except Exception as e:
         await update.message.reply_text(f"❌ အမှားအယွင်းရှိပါသည်: {str(e)}")
 
+# Delete Commands mapping removed to make way for Interactive Inline Buttons
 async def delete_sale(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    # Backward compatibility if user still types it manually
     try:
         if not context.args:
-            await update.message.reply_text("❌ **Format:**\n`/delete_sale <ID>`", parse_mode="Markdown")
             return
         sale_id = int(context.args[0].strip())
         conn = get_db()
@@ -630,13 +621,12 @@ async def delete_sale(update: Update, context: ContextTypes.DEFAULT_TYPE):
         conn.commit()
         conn.close()
         await update.message.reply_text(f"🗑️ ID `{sale_id}` စာရင်းကို ဖျက်လိုက်ပါပြီ။", parse_mode="Markdown")
-    except Exception as e:
-        await update.message.reply_text(f"❌ Error: {str(e)}")
+    except:
+        pass
 
 async def delete_item(update: Update, context: ContextTypes.DEFAULT_TYPE):
     try:
         if not context.args:
-            await update.message.reply_text("❌ **Format:**\n`/delete_item <ပစ္စည်းအမည်>`", parse_mode="Markdown")
             return
         item_name = " ".join(context.args).strip()
         conn = get_db()
@@ -645,20 +635,25 @@ async def delete_item(update: Update, context: ContextTypes.DEFAULT_TYPE):
         conn.commit()
         conn.close()
         await update.message.reply_text(f"🗑️ Stock ထဲမှ `{item_name}` ကို ဖျက်လိုက်ပါပြီ။", parse_mode="Markdown")
-    except Exception as e:
-        await update.message.reply_text(f"❌ Error: {str(e)}")
+    except:
+        pass
 
 async def reset_all(update: Update, context: ContextTypes.DEFAULT_TYPE):
     keyboard = [[
         InlineKeyboardButton("✅ အကုန်ဖျက်မည် (Confirm)", callback_data="confirm_reset_all"),
-        InlineKeyboardButton("❌ မဖျက်တော့ပါ (Cancel)", callback_data="cancel_reset_all")
+        InlineKeyboardButton("❌ မဖျက်တော့ပါ (Cancel)", callback_data="cancel_action")
     ]]
     await update.message.reply_text("⚠️ စာရင်းအားလုံး ဖျက်ပစ်ပါမည်။ ဧကန်မုချ ဖျက်လိုပါသလား?", reply_markup=InlineKeyboardMarkup(keyboard))
 
-async def reset_callback_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
+# ----------------------------------------------------
+# 🔘 Unified Callback Handler for Buttons (Delete Menus, Reset)
+# ----------------------------------------------------
+async def main_callback_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
     query = update.callback_query
     await query.answer()
-    if query.data == "confirm_reset_all":
+    data = query.data
+
+    if data == "confirm_reset_all":
         conn = get_db()
         cursor = conn.cursor()
         cursor.execute("DELETE FROM inventory")
@@ -668,10 +663,81 @@ async def reset_callback_handler(update: Update, context: ContextTypes.DEFAULT_T
         cursor.execute("DELETE FROM purchases")
         conn.commit()
         conn.close()
-        await query.message.edit_text("💥 **စာရင်း အားလုံးကို အောင်မြင်စွာ ဖျက်ပစ်ပြီးပါပြီ!**", parse_mode="Markdown")
-    elif query.data == "cancel_reset_all":
-        await query.message.edit_text("❌ စာရင်းဖျက်ခြင်းကို ပယ်ဖျက်လိုက်ပါပြီ။")
+        await query.edit_message_text("💥 **စာရင်း အားလုံးကို အောင်မြင်စွာ ဖျက်ပစ်ပြီးပါပြီ!**", parse_mode="Markdown")
+    
+    elif data == "cancel_action":
+        await query.edit_message_text("❌ လုပ်ဆောင်ချက်ကို ပယ်ဖျက်လိုက်ပါပြီ။")
 
+    # --- Interactive Delete Menus ---
+    elif data == "menu_del_sale":
+        conn = get_db()
+        cursor = conn.cursor()
+        # Fetch last 10 sales
+        cursor.execute("SELECT id, customer_name, item_name FROM sales ORDER BY id DESC LIMIT 10")
+        rows = cursor.fetchall()
+        conn.close()
+        
+        if not rows:
+            await query.edit_message_text("ဖျက်စရာ အရောင်းစာရင်း မရှိသေးပါ။")
+            return
+        
+        keyboard = []
+        for r in rows:
+            btn_text = f"ID:{r[0]} | {r[1]} ({r[2]})"
+            keyboard.append([InlineKeyboardButton(btn_text, callback_data=f"do_del_sale_{r[0]}")])
+        keyboard.append([InlineKeyboardButton("🔙 နောက်သို့", callback_data="cancel_action")])
+        
+        await query.edit_message_text("🗑️ **နောက်ဆုံးသွင်းထားသော အရောင်းစာရင်းများ:**\nဖျက်လိုသော စာရင်းကို နှိပ်ပါ -", reply_markup=InlineKeyboardMarkup(keyboard), parse_mode="Markdown")
+
+    elif data == "menu_del_stock":
+        conn = get_db()
+        cursor = conn.cursor()
+        cursor.execute("SELECT id, item_name FROM inventory")
+        rows = cursor.fetchall()
+        conn.close()
+        
+        if not rows:
+            await query.edit_message_text("ဖျက်စရာ Stock ပစ္စည်း မရှိသေးပါ။")
+            return
+        
+        keyboard = []
+        for r in rows:
+            btn_text = f"📦 {r[1]}"
+            keyboard.append([InlineKeyboardButton(btn_text, callback_data=f"do_del_stock_{r[0]}")])
+        keyboard.append([InlineKeyboardButton("🔙 နောက်သို့", callback_data="cancel_action")])
+        
+        await query.edit_message_text("🗑️ **ဖျက်လိုသော Stock ပစ္စည်းကို ရွေးပါ:**", reply_markup=InlineKeyboardMarkup(keyboard), parse_mode="Markdown")
+
+    # --- Execute Deletions ---
+    elif data.startswith("do_del_sale_"):
+        sale_id = data.split("_")[3]
+        conn = get_db()
+        cursor = conn.cursor()
+        cursor.execute("SELECT customer_name, item_name FROM sales WHERE id = ?", (sale_id,))
+        row = cursor.fetchone()
+        if row:
+            cursor.execute("DELETE FROM sales WHERE id = ?", (sale_id,))
+            conn.commit()
+            await query.edit_message_text(f"✅ အရောင်းစာရင်း ID: `{sale_id}` ({row[0]} - {row[1]}) ကို ဖျက်လိုက်ပါပြီ။", parse_mode="Markdown")
+        else:
+            await query.edit_message_text("❌ စာရင်းရှာမတွေ့ပါ။ ဖျက်ပြီးသား ဖြစ်နိုင်ပါသည်။")
+        conn.close()
+
+    elif data.startswith("do_del_stock_"):
+        stock_id = data.split("_")[3]
+        conn = get_db()
+        cursor = conn.cursor()
+        cursor.execute("SELECT item_name FROM inventory WHERE id = ?", (stock_id,))
+        row = cursor.fetchone()
+        if row:
+            cursor.execute("DELETE FROM inventory WHERE id = ?", (stock_id,))
+            conn.commit()
+            await query.edit_message_text(f"✅ Stock ပစ္စည်း `{row[0]}` ကို ဖျက်လိုက်ပါပြီ။", parse_mode="Markdown")
+        else:
+            await query.edit_message_text("❌ ပစ္စည်းရှာမတွေ့ပါ။ ဖျက်ပြီးသား ဖြစ်နိုင်ပါသည်။")
+        conn.close()
+
+# Excel Import / Export
 async def export_excel(update: Update, context: ContextTypes.DEFAULT_TYPE):
     try:
         conn = get_db()
@@ -784,8 +850,16 @@ async def handle_button_clicks(update: Update, context: ContextTypes.DEFAULT_TYP
         await update.message.reply_text("⏳ **အရင်က ကြွေးဟောင်း ထည့်ရန်:**\n`/add_credit <ဝယ်သူနာမည်> | <ပစ္စည်းအမည်> | <စုစုပေါင်းအကြွေး> | <တစ်လပေးရမည့်ငွေ>`\n👇 `/add_credit U Ba | Phone | 500000 | 100000`", parse_mode="Markdown")
     elif text == "📦 Stock လက်ကျန်ထည့်":
         await update.message.reply_text("📦 **ဆိုင်ရှိ ပစ္စည်းဟောင်း ထည့်ရန်:**\n`/add_stock <ပစ္စည်းအမည်> | <အရေအတွက်> | <ဝယ်ဈေး>`\n👇 `/add_stock iPhone 12 | 5 | 800000`", parse_mode="Markdown")
+    
+    # --- စာရင်းဖျက် Interactive UI ---
     elif text == "🗑️ စာရင်းဖျက်":
-        await update.message.reply_text("🗑️ **စာရင်းမှား ဖျက်လိုပါက:**\n• အရောင်းစာရင်းဖျက်ရန်: `/delete_sale <ID>`\n• Stock ပစ္စည်းဖျက်ရန်: `/delete_item <ပစ္စည်းအမည်>`\n• စာရင်းအားလုံးဖျက်ရန်: `/reset_all`", parse_mode="Markdown")
+        keyboard = [
+            [InlineKeyboardButton("📝 အရောင်းစာရင်း ဖျက်မည်", callback_data="menu_del_sale")],
+            [InlineKeyboardButton("📦 Stock ပစ္စည်း ဖျက်မည်", callback_data="menu_del_stock")],
+            [InlineKeyboardButton("💥 စာရင်းအားလုံး ဖျက်မည်", callback_data="confirm_reset_all")]
+        ]
+        await update.message.reply_text("🗑️ **ဘာကိုဖျက်ချင်တာလဲ ရွေးချယ်ပါ:**", reply_markup=InlineKeyboardMarkup(keyboard), parse_mode="Markdown")
+    
     elif text == "💰 ငွေဆပ်မည်":
         await update.message.reply_text("💰 **အကြွေး ငွေလာဆပ်ရန်:**\n`/pay <ဝယ်သူနာမည်> | <ပေးသည့်ပမာဏ>`\n👇 `/pay Mg Mg | 100000`", parse_mode="Markdown")
     elif text == "📜 Command ကြည့်ရန်":
@@ -812,13 +886,14 @@ def main():
     app.add_handler(CommandHandler("stock", stock))
     app.add_handler(CommandHandler("list", list_pending))
     app.add_handler(CommandHandler("report", report))
-    app.add_handler(CommandHandler("monthly_report", report)) # backwards compatibility
+    app.add_handler(CommandHandler("monthly_report", report))
     app.add_handler(CommandHandler("delete_sale", delete_sale))
     app.add_handler(CommandHandler("delete_item", delete_item))
     app.add_handler(CommandHandler("reset_all", reset_all))
     app.add_handler(CommandHandler("export", export_excel))
 
-    app.add_handler(CallbackQueryHandler(reset_callback_handler))
+    # Unified Callback Handler for interactive buttons
+    app.add_handler(CallbackQueryHandler(main_callback_handler))
     app.add_handler(MessageHandler(filters.Document.MimeType("application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"), handle_excel_upload))
     app.add_handler(MessageHandler(filters.TEXT & ~filters.COMMAND, handle_button_clicks))
 
