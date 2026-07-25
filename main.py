@@ -147,7 +147,7 @@ async def show_commands(update: Update, context: ContextTypes.DEFAULT_TYPE):
         "`/buy iPhone 13 | 2 | 1200000 | 5000` (Delivery ခ ပါပါက)\n\n"
         "💵 **၂။ ရောင်းချခြင်း:**\n"
         "`/sell_cash AungAung | iPhone 13 | 1500000`\n"
-        "`/sell_gift AungAung | iPhone 13 | 1500000 | Cover`\n"
+        "`/sell_gift AungAung | iPhone 13 | 1500000 | Cover, Earplug` (လက်ဆောင် ၂ ခုပေးလျှင် ကော်မာခံပါ)\n"
         "`/sell_installment MgMg | Phone | 1500000 | 300000 | 100000`\n"
         "`/sell_installment_gift MgMg | Phone | 1500000 | 300000 | 100000 | Cover`\n\n"
         "💰 **၃။ ငွေဆပ်ခြင်း / ငွေလက်ကျန် / အသုံးစရိတ်:**\n"
@@ -338,31 +338,36 @@ async def sell_cash(update: Update, context: ContextTypes.DEFAULT_TYPE):
     except Exception as e:
         await update.message.reply_text(f"❌ Error: {str(e)}")
 
+# Cash Sale with Multiple Gifts Support
 async def sell_gift(update: Update, context: ContextTypes.DEFAULT_TYPE):
     try:
         args = " ".join(context.args).split("|")
         if len(args) != 4:
             stock_info = get_available_stock_info()
-            await update.message.reply_text(f"{stock_info}\n\n❌ **Format:**\n`/sell_gift <ဝယ်သူ> | <ပစ္စည်း> | <ရောင်းဈေး> | <လက်ဆောင်>`", parse_mode="Markdown")
+            await update.message.reply_text(f"{stock_info}\n\n❌ **Format:**\n`/sell_gift <ဝယ်သူ> | <ပစ္စည်း> | <ရောင်းဈေး> | <လက်ဆောင်၁, လက်ဆောင်၂>`", parse_mode="Markdown")
             return
         customer, item_name, price, gift = args[0].strip(), args[1].strip(), float(args[2].strip()), args[3].strip()
         today = datetime.date.today().strftime("%Y-%m-%d")
         conn = get_db()
         cursor = conn.cursor()
 
+        # Deduct Main Item
         cursor.execute("SELECT quantity FROM inventory WHERE item_name = ?", (item_name,))
         row = cursor.fetchone()
         if not row or row[0] < 1:
             await update.message.reply_text("❌ ရောင်းချမည့် ပစ္စည်း Stock မလုံလောက်ပါ။")
             conn.close()
             return
-
         cursor.execute("UPDATE inventory SET quantity = quantity - 1 WHERE item_name = ?", (item_name,))
 
-        cursor.execute("SELECT quantity FROM inventory WHERE item_name = ?", (gift,))
-        gift_row = cursor.fetchone()
-        if gift_row and gift_row[0] > 0:
-            cursor.execute("UPDATE inventory SET quantity = quantity - 1 WHERE item_name = ?", (gift,))
+        # Deduct Multiple Gifts
+        gifts_list = [g.strip() for g in gift.split(',')]
+        for g_item in gifts_list:
+            if not g_item: continue
+            cursor.execute("SELECT quantity FROM inventory WHERE item_name = ?", (g_item,))
+            gift_row = cursor.fetchone()
+            if gift_row and gift_row[0] > 0:
+                cursor.execute("UPDATE inventory SET quantity = quantity - 1 WHERE item_name = ?", (g_item,))
 
         cursor.execute("INSERT INTO sales (customer_name, item_name, sale_type, total_price, paid_amount, monthly_payment, status, date, gift_item) VALUES (?, ?, 'CASH', ?, ?, 0, 'PAID', ?, ?)", (customer, item_name, price, price, today, gift))
         sale_id = cursor.lastrowid
@@ -399,31 +404,36 @@ async def sell_installment(update: Update, context: ContextTypes.DEFAULT_TYPE):
     except Exception as e:
         await update.message.reply_text(f"❌ Error: {str(e)}")
 
+# Installment Sale with Multiple Gifts Support
 async def sell_installment_gift(update: Update, context: ContextTypes.DEFAULT_TYPE):
     try:
         args = " ".join(context.args).split("|")
         if len(args) != 6:
             stock_info = get_available_stock_info()
-            await update.message.reply_text(f"{stock_info}\n\n❌ **Format:**\n`/sell_installment_gift <ဝယ်သူ> | <ပစ္စည်း> | <စုစုပေါင်းဈေး> | <စပေါ်> | <၁လပေး> | <လက်ဆောင်>`", parse_mode="Markdown")
+            await update.message.reply_text(f"{stock_info}\n\n❌ **Format:**\n`/sell_installment_gift <ဝယ်သူ> | <ပစ္စည်း> | <စုစုပေါင်း> | <စပေါ်> | <၁လပေး> | <လက်ဆောင်၁, လက်ဆောင်၂>`", parse_mode="Markdown")
             return
         customer, item_name, total_price, down_payment, monthly_pay, gift = args[0].strip(), args[1].strip(), float(args[2].strip()), float(args[3].strip()), float(args[4].strip()), args[5].strip()
         today = datetime.date.today().strftime("%Y-%m-%d")
         conn = get_db()
         cursor = conn.cursor()
 
+        # Deduct Main Item
         cursor.execute("SELECT quantity FROM inventory WHERE item_name = ?", (item_name,))
         row = cursor.fetchone()
         if not row or row[0] < 1:
             await update.message.reply_text("❌ ပစ္စည်း Stock မလုံလောက်ပါ။")
             conn.close()
             return
-
         cursor.execute("UPDATE inventory SET quantity = quantity - 1 WHERE item_name = ?", (item_name,))
 
-        cursor.execute("SELECT quantity FROM inventory WHERE item_name = ?", (gift,))
-        gift_row = cursor.fetchone()
-        if gift_row and gift_row[0] > 0:
-            cursor.execute("UPDATE inventory SET quantity = quantity - 1 WHERE item_name = ?", (gift,))
+        # Deduct Multiple Gifts
+        gifts_list = [g.strip() for g in gift.split(',')]
+        for g_item in gifts_list:
+            if not g_item: continue
+            cursor.execute("SELECT quantity FROM inventory WHERE item_name = ?", (g_item,))
+            gift_row = cursor.fetchone()
+            if gift_row and gift_row[0] > 0:
+                cursor.execute("UPDATE inventory SET quantity = quantity - 1 WHERE item_name = ?", (g_item,))
 
         status = 'PAID' if down_payment >= total_price else 'PENDING'
         cursor.execute("INSERT INTO sales (customer_name, item_name, sale_type, total_price, paid_amount, monthly_payment, status, date, gift_item) VALUES (?, ?, 'INSTALLMENT', ?, ?, ?, ?, ?, ?)", (customer, item_name, total_price, down_payment, monthly_pay, status, today, gift))
@@ -496,6 +506,7 @@ async def pay(update: Update, context: ContextTypes.DEFAULT_TYPE):
     except Exception as e:
         await update.message.reply_text(f"❌ Error: {str(e)}")
 
+# Updated Stock with Total Value
 async def stock(update: Update, context: ContextTypes.DEFAULT_TYPE):
     conn = get_db()
     cursor = conn.cursor()
@@ -608,9 +619,8 @@ async def report(update: Update, context: ContextTypes.DEFAULT_TYPE):
     except Exception as e:
         await update.message.reply_text(f"❌ အမှားအယွင်းရှိပါသည်: {str(e)}")
 
-# Delete Commands mapping removed to make way for Interactive Inline Buttons
+# Backward compatibility functions
 async def delete_sale(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    # Backward compatibility if user still types it manually
     try:
         if not context.args:
             return
@@ -672,7 +682,6 @@ async def main_callback_handler(update: Update, context: ContextTypes.DEFAULT_TY
     elif data == "menu_del_sale":
         conn = get_db()
         cursor = conn.cursor()
-        # Fetch last 10 sales
         cursor.execute("SELECT id, customer_name, item_name FROM sales ORDER BY id DESC LIMIT 10")
         rows = cursor.fetchall()
         conn.close()
@@ -827,7 +836,7 @@ async def handle_button_clicks(update: Update, context: ContextTypes.DEFAULT_TYP
         await update.message.reply_text(f"{stock_info}\n\n⏳ **ကြွေးရောင်းရန်:**\n`/sell_installment <ဝယ်သူ> | <ပစ္စည်း> | <စုစုပေါင်းဈေး> | <စပေါ်ငွေ> | <၁လပေးရမည့်ငွေ>`\n👇 `/sell_installment MgMg | Phone | 1500000 | 300000 | 100000`", parse_mode="Markdown")
     elif text == "🎁 လက်ဆောင်ပေးရောင်း":
         stock_info = get_available_stock_info()
-        await update.message.reply_text(f"{stock_info}\n\n🎁 **လက်ဆောင်ပါဝင်သော ရောင်းချမှု ပုံစံ:**\n\n၁။ **လက်ငင်းရောင်း:**\n`/sell_gift <ဝယ်သူ> | <ပစ္စည်း> | <ရောင်းဈေး> | <လက်ဆောင်>`\n\n၂။ **ကြွေးရောင်း:**\n`/sell_installment_gift <ဝယ်သူ> | <ပစ္စည်း> | <စုစုပေါင်း> | <စပေါ်> | <၁လပေး> | <လက်ဆောင်>`", parse_mode="Markdown")
+        await update.message.reply_text(f"{stock_info}\n\n🎁 **လက်ဆောင်ပါဝင်သော ရောင်းချမှု ပုံစံ:**\n\n၁။ **လက်ငင်းရောင်း:**\n`/sell_gift <ဝယ်သူ> | <ပစ္စည်း> | <ရောင်းဈေး> | <လက်ဆောင်၁, လက်ဆောင်၂>`\n👇 `/sell_gift AungAung | iPhone 13 | 1500000 | Phone Cover, Earplug`\n\n၂။ **ကြွေးရောင်း:**\n`/sell_installment_gift <ဝယ်သူ> | <ပစ္စည်း> | <စုစုပေါင်း> | <စပေါ်> | <၁လပေး> | <လက်ဆောင်>`\n👇 `/sell_installment_gift MgMg | Phone | 1500000 | 300000 | 100000 | Screen Protector`", parse_mode="Markdown")
     elif text in ["📈 လချုပ်အရှုံးအမြတ်", "📈 လချုပ်/နှစ်ချုပ်"]:
         await update.message.reply_text(
             "📈 **စာရင်းချုပ် ကြည့်ရန် (လအလိုက် / နှစ်အလိုက်):**\n\n"
@@ -851,7 +860,6 @@ async def handle_button_clicks(update: Update, context: ContextTypes.DEFAULT_TYP
     elif text == "📦 Stock လက်ကျန်ထည့်":
         await update.message.reply_text("📦 **ဆိုင်ရှိ ပစ္စည်းဟောင်း ထည့်ရန်:**\n`/add_stock <ပစ္စည်းအမည်> | <အရေအတွက်> | <ဝယ်ဈေး>`\n👇 `/add_stock iPhone 12 | 5 | 800000`", parse_mode="Markdown")
     
-    # --- စာရင်းဖျက် Interactive UI ---
     elif text == "🗑️ စာရင်းဖျက်":
         keyboard = [
             [InlineKeyboardButton("📝 အရောင်းစာရင်း ဖျက်မည်", callback_data="menu_del_sale")],
@@ -892,7 +900,6 @@ def main():
     app.add_handler(CommandHandler("reset_all", reset_all))
     app.add_handler(CommandHandler("export", export_excel))
 
-    # Unified Callback Handler for interactive buttons
     app.add_handler(CallbackQueryHandler(main_callback_handler))
     app.add_handler(MessageHandler(filters.Document.MimeType("application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"), handle_excel_upload))
     app.add_handler(MessageHandler(filters.TEXT & ~filters.COMMAND, handle_button_clicks))
