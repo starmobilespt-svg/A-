@@ -73,7 +73,7 @@ def init_db():
         )
     ''')
 
-    # Expenses Table (အသုံးစရိတ် ဇယား)
+    # Expenses Table
     cursor.execute('''
         CREATE TABLE IF NOT EXISTS expenses (
             id INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -90,7 +90,7 @@ init_db()
 def get_db():
     return sqlite3.connect(DB_FILE)
 
-# Custom Bottom Keyboard Menu (အသုံးစရိတ် ခလုတ် ပါဝင်သည်)
+# Custom Bottom Keyboard Menu
 def get_main_keyboard():
     keyboard = [
         [KeyboardButton("📦 ဝယ်ယူမည်"), KeyboardButton("💵 လက်ငင်းရောင်းမည်")],
@@ -119,15 +119,15 @@ async def show_commands(update: Update, context: ContextTypes.DEFAULT_TYPE):
         "`/buy iPhone 13 | 2 | 1200000`\n"
         "`/add_stock iPhone 12 | 5 | 800000` (ပစ္စည်းဟောင်း/Stock ထည့်ရန်)\n\n"
         "💸 **၂။ ဆိုင်အသုံးစရိတ် ထည့်သွင်းခြင်း:**\n"
-        "`/expense မီးဖိုး | 50000` (အသုံးစရိတ် စာရင်းသွင်းရန်)\n\n"
+        "`/expense မီးဖိုး | 50000`\n\n"
         "⏳ **၃။ အကြွေးဟောင်း ထည့်သွင်းခြင်း:**\n"
-        "`/add_credit U Ba | Phone | 500000 | 100000` (အကြွေးဟောင်းထည့်ရန်)\n\n"
+        "`/add_credit U Ba | Phone | 500000 | 100000`\n\n"
         "💵 **၄။ လက်ငင်း ရောင်းချခြင်း:**\n"
         "`/sell_cash AungAung | iPhone 13 | 1500000`\n\n"
         "⏳ **၅။ အရစ်ကျ ရောင်းချခြင်း:**\n"
         "`/sell_installment MgMg | Phone | 1500000 | 300000 | 100000`\n\n"
         "💰 **၆။ အရစ်ကျ ငွေလာဆပ်ခြင်း:**\n"
-        "`/pay MgMg 100000`\n\n"
+        "`/pay Mg Mg | 100000` (သို့မဟုတ် `/pay 1 | 100000` ID ဖြင့်)\n\n"
         "📊 **၇။ စာရင်းများ စစ်ဆေးခြင်း:**\n"
         "`/stock` - Stock စာရင်းကြည့်ရန်\n"
         "`/list` - အရစ်ကျကျန်သူများ စာရင်းကြည့်ရန်\n"
@@ -294,29 +294,77 @@ async def sell_installment(update: Update, context: ContextTypes.DEFAULT_TYPE):
     except Exception as e:
         await update.message.reply_text(f"❌ အမှားအယွင်းရှိပါသည်: {str(e)}")
 
+# Updated Pay Command (/pay)
 async def pay(update: Update, context: ContextTypes.DEFAULT_TYPE):
     try:
-        if len(context.args) < 2:
-            await update.message.reply_text("❌ **Standard Format:**\n`/pay <ဝယ်သူနာမည်> <ပေးသည့်ပမာဏ>`\n\n👇 **နှိပ်ပြီး ကူးယူပါ:**\n`/pay MgMg 100000`", parse_mode="Markdown")
+        raw_input = " ".join(context.args).strip()
+        if not raw_input:
+            await update.message.reply_text("❌ **Standard Format:**\n`/pay <ဝယ်သူနာမည် သို့မဟုတ် ID> | <ပေးသည့်ပမာဏ>`\n\n👇 **နှိပ်ပြီး ကူးယူပါ:**\n`/pay Mg Mg | 100000`", parse_mode="Markdown")
             return
-        customer, amount = context.args[0].strip(), float(context.args[1].strip())
+
+        if "|" in raw_input:
+            parts = raw_input.split("|")
+            target_str = parts[0].strip()
+            amount_str = parts[1].strip()
+        else:
+            parts = raw_input.rsplit(" ", 1)
+            if len(parts) != 2:
+                await update.message.reply_text("❌ **Standard Format:**\n`/pay <ဝယ်သူနာမည်> | <ပေးသည့်ပမာဏ>`\n\n👇 **နှိပ်ပြီး ကူးယူပါ:**\n`/pay Mg Mg | 100000`", parse_mode="Markdown")
+                return
+            target_str = parts[0].strip()
+            amount_str = parts[1].strip()
+
+        amount = float(amount_str)
         conn = get_db()
         cursor = conn.cursor()
-        cursor.execute("SELECT id, total_price, paid_amount FROM sales WHERE customer_name = ? AND status = 'PENDING' AND sale_type = 'INSTALLMENT' ORDER BY id ASC LIMIT 1", (customer,))
-        row = cursor.fetchone()
-        if not row:
-            await update.message.reply_text(f"❌ {customer} အတွက် အရစ်ကျ ပေးရန်ကျန်သော စာရင်း ရှာမတွေ့ပါ။")
+
+        # ID ဖြင့် ပေးချေခြင်း
+        if target_str.isdigit():
+            sale_id = int(target_str)
+            cursor.execute("SELECT id, customer_name, item_name, total_price, paid_amount FROM sales WHERE id = ? AND status = 'PENDING'", (sale_id,))
+            rows = cursor.fetchall()
+        else:
+            customer = target_str
+            cursor.execute("SELECT id, customer_name, item_name, total_price, paid_amount FROM sales WHERE customer_name = ? AND status = 'PENDING' AND sale_type = 'INSTALLMENT'", (customer,))
+            rows = cursor.fetchall()
+
+        if not rows:
+            await update.message.reply_text(f"❌ `{target_str}` အတွက် အရစ်ကျ ပေးရန်ကျန်သော စာရင်း ရှာမတွေ့ပါ။", parse_mode="Markdown")
             conn.close()
             return
-        sale_id, total_price, current_paid = row
+
+        # နာမည်တူနေပါက ID ဖြင့် ရွေးခိုင်းခြင်း
+        if len(rows) > 1:
+            msg = f"⚠️ **'{target_str}' အမည်ဖြင့် အကြွေးကျန် စာရင်း ({len(rows)}) ခု တွေ့ရှိနေပါသည်။**\n\n"
+            msg += "ဘယ်စာရင်းအတွက် ငွေဆပ်မည်နည်း? အောက်ပါ ID ဖြင့် ပြန်ပေးချေပါ:\n\n"
+            for r in rows:
+                rem = r[3] - r[4]
+                msg += f"🆔 ID: `{r[0]}` | 👤 **{r[1]}** ({r[2]})\n  ကျန်ငွေ: `{rem:,.0f}` MMK\n👉 `/pay {r[0]} | {amount:,.0f}`\n\n"
+            await update.message.reply_text(msg, parse_mode="Markdown")
+            conn.close()
+            return
+
+        sale_id, customer_name, item_name, total_price, current_paid = rows[0]
         new_paid = current_paid + amount
         new_status = 'PAID' if new_paid >= total_price else 'PENDING'
+
         cursor.execute("UPDATE sales SET paid_amount = ?, status = ? WHERE id = ?", (new_paid, new_status, sale_id))
         conn.commit()
         conn.close()
+
         rem = total_price - new_paid
         rem_str = "0 (ပေးချေမှု ပြီးဆုံးပါပြီ)" if rem <= 0 else f"{rem:,.0f} MMK"
-        await update.message.reply_text(f"💰 **ငွေဆပ်မှု အဆင်ပြေပါသည်။**\n\n🆔 အရောင်း ID: `{sale_id}`\n👤 ဝယ်သူ: `{customer}`\n💵 ပေးသွင်းငွေ: `{amount:,.0f}` MMK\n📊 ပေးပြီး စုစုပေါင်း: `{new_paid:,.0f}` / `{total_price:,.0f}` MMK\n📉 ပေးရန်ကျန်ငွေ: `{rem_str}`", parse_mode="Markdown")
+
+        await update.message.reply_text(
+            f"💰 **ငွေဆပ်မှု အဆင်ပြေပါသည်။**\n\n"
+            f"🆔 အရောင်း ID: `{sale_id}`\n"
+            f"👤 ဝယ်သူ: `{customer_name}`\n"
+            f"📦 ပစ္စည်း: `{item_name}`\n"
+            f"💵 ပေးသွင်းငွေ: `{amount:,.0f}` MMK\n"
+            f"📊 ပေးပြီး စုစုပေါင်း: `{new_paid:,.0f}` / `{total_price:,.0f}` MMK\n"
+            f"📉 ပေးရန်ကျန်ငွေ: `{rem_str}`",
+            parse_mode="Markdown"
+        )
     except Exception as e:
         await update.message.reply_text(f"❌ အမှားအယွင်းရှိပါသည်: {str(e)}")
 
@@ -350,14 +398,13 @@ async def list_pending(update: Update, context: ContextTypes.DEFAULT_TYPE):
     msg += "💡 *စာရင်းမှား၍ ဖျက်လိုပါက:* `/delete_sale <ID>`"
     await update.message.reply_text(msg, parse_mode="Markdown")
 
-# 📊 လအလိုက် အရှုံးအမြတ် တွက်ချက်ပြသသည့် Function (အသုံးစရိတ်ပါ တွက်ပေးသည်)
+# 📊 လအလိုက် အရှုံးအမြတ် တွက်ချက်ပြသသည့် Function
 async def monthly_report(update: Update, context: ContextTypes.DEFAULT_TYPE):
     try:
         year_month = context.args[0].strip() if context.args else datetime.date.today().strftime("%Y-%m")
         conn = get_db()
         cursor = conn.cursor()
 
-        # Sales and inventory cost
         cursor.execute('''
             SELECT s.item_name, s.total_price, s.paid_amount, COALESCE(i.cost_price, 0)
             FROM sales s
@@ -366,7 +413,6 @@ async def monthly_report(update: Update, context: ContextTypes.DEFAULT_TYPE):
         ''', (year_month,))
         sales_rows = cursor.fetchall()
 
-        # Expenses
         cursor.execute('''
             SELECT SUM(amount) FROM expenses WHERE strftime('%Y-%m', date) = ?
         ''', (year_month,))
@@ -383,7 +429,6 @@ async def monthly_report(update: Update, context: ContextTypes.DEFAULT_TYPE):
         total_collected_cash = sum(r[2] for r in sales_rows)
         total_cost = sum(r[3] for r in sales_rows)
 
-        # Net Profit Calculation
         net_profit = total_sales_value - total_cost - total_expense
         cash_profit = total_collected_cash - total_cost - total_expense
 
@@ -407,12 +452,12 @@ async def monthly_report(update: Update, context: ContextTypes.DEFAULT_TYPE):
 async def delete_sale(update: Update, context: ContextTypes.DEFAULT_TYPE):
     try:
         if not context.args:
-            await update.message.reply_text("❌ **Standard Format:**\n`/delete_sale <ID>`\n\n👇 **နှိပ်ပြီး ကူးယူပါ:**\n`/delete_sale 1`", parse_mode="Markdown")
+            await update.message.reply_text("❌ **Standard Format:**\n`/delete_sale <ID>`\n\n💡 စာရင်း ID များ သိရှိလိုပါက **`⏳ ပေးရန်ကျန်သူများ`** ခလုတ်ကို နှိပ်ပြီး ကြည့်နိုင်ပါသည်။", parse_mode="Markdown")
             return
         sale_id = int(context.args[0].strip())
         conn = get_db()
         cursor = conn.cursor()
-        cursor.execute("SELECT customer_name, item_name FROM sales WHERE id = ?", (sale_id,))
+        cursor.execute("SELECT customer_name, item_name, total_price, paid_amount FROM sales WHERE id = ?", (sale_id,))
         row = cursor.fetchone()
         if not row:
             await update.message.reply_text(f"❌ ID `{sale_id}` ဖြင့် အရောင်းစာရင်း ရှာမတွေ့ပါ။", parse_mode="Markdown")
@@ -421,7 +466,7 @@ async def delete_sale(update: Update, context: ContextTypes.DEFAULT_TYPE):
         cursor.execute("DELETE FROM sales WHERE id = ?", (sale_id,))
         conn.commit()
         conn.close()
-        await update.message.reply_text(f"🗑️ ID `{sale_id}` ({row[0]} - {row[1]}) အရောင်းစာရင်းကို ဖျက်လိုက်ပါပြီ။", parse_mode="Markdown")
+        await update.message.reply_text(f"🗑️ ID `{sale_id}` ({row[0]} - {row[1]} / ကျန်ငွေ: {row[2]-row[3]:,.0f} MMK) စာရင်းကို ဖျက်လိုက်ပါပြီ။", parse_mode="Markdown")
     except Exception as e:
         await update.message.reply_text(f"❌ အမှားအယွင်းရှိပါသည်: {str(e)}")
 
@@ -558,7 +603,7 @@ async def handle_button_clicks(update: Update, context: ContextTypes.DEFAULT_TYP
     elif text == "⏳ အရစ်ကျရောင်းမည်":
         await update.message.reply_text("⏳ **အရစ်ကျ ရောင်းချရန်:**\n`/sell_installment <ဝယ်သူနာမည်> | <ပစ္စည်းအမည်> | <စုစုပေါင်းရောင်းဈေး> | <စပေါ်ငွေ> | <တစ်လ ပုံမှန်ပေးရမည့်ငွေ>`\n\n👇 **နှိပ်ပြီး ကူးယူပါ:**\n`/sell_installment MgMg | Phone | 1500000 | 300000 | 100000`", parse_mode="Markdown")
     elif text == "💰 ငွေဆပ်မည်":
-        await update.message.reply_text("💰 **အရစ်ကျ ငွေလာဆပ်ရန်:**\n`/pay <ဝယ်သူနာမည်> <ပေးသည့်ပမာဏ>`\n\n👇 **နှိပ်ပြီး ကူးယူပါ:**\n`/pay MgMg 100000`", parse_mode="Markdown")
+        await update.message.reply_text("💰 **အရစ်ကျ ငွေလာဆပ်ရန်:**\n`/pay <ဝယ်သူနာမည်> | <ပေးသည့်ပမာဏ>`\n\n👇 **နှိပ်ပြီး ကူးယူပါ:**\n`/pay Mg Mg | 100000`", parse_mode="Markdown")
     elif text == "💸 အသုံးစရိတ်ထည့်မည်":
         await update.message.reply_text("💸 **ဆိုင်အသုံးစရိတ် စာရင်းသွင်းရန်:**\n`/expense <အကြောင်းအရာ> | <ပမာဏ>`\n\n👇 **နှိပ်ပြီး ကူးယူပါ:**\n`/expense မီးဖိုး | 50000`", parse_mode="Markdown")
     elif text == "📦 ပစ္စည်းဟောင်းထည့်မည်":
