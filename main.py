@@ -123,7 +123,8 @@ async def show_commands(update: Update, context: ContextTypes.DEFAULT_TYPE):
     msg = (
         "🛍️ **အသုံးပြုနိုင်သော Command များ (ထိလိုက်ပါက Copy ရပါသည်):**\n\n"
         "📦 **၁။ ပစ္စည်းဝယ်ယူခြင်း / ထည့်သွင်းခြင်း:**\n"
-        "`/buy iPhone 13 | 2 | 1200000`\n"
+        "`/buy iPhone 13 | 2 | 1200000` (Delivery ခ မပါပါက)\n"
+        "`/buy iPhone 13 | 2 | 1200000 | 5000` (Delivery ခ ပါပါက Auto အသုံးစရိတ်ထဲ ပေါင်းစပ်မည်)\n"
         "`/add_stock iPhone 12 | 5 | 800000` (ပစ္စည်းဟောင်း/Stock ထည့်ရန်)\n\n"
         "💵 **၂။ ရောင်းချခြင်း (လက်ဆောင်ပါဝင်မှု အပါအဝင်):**\n"
         "`/sell_cash AungAung | iPhone 13 | 1500000` (လက်ငင်းရောင်း)\n"
@@ -150,25 +151,52 @@ async def show_commands(update: Update, context: ContextTypes.DEFAULT_TYPE):
     )
     await update.message.reply_text(msg, parse_mode="Markdown")
 
-# Command 1: /buy
+# Command 1: /buy (Updated to support optional Delivery Fee)
 async def buy(update: Update, context: ContextTypes.DEFAULT_TYPE):
     try:
         args = " ".join(context.args).split("|")
-        if len(args) != 3:
-            await update.message.reply_text("❌ **Standard Format:**\n`/buy <ပစ္စည်းအမည်> | <အရေအတွက်> | <ဝယ်ဈေး>`\n\n👇 **နှိပ်ပြီး ကူးယူပါ:**\n`/buy iPhone 13 | 2 | 1200000`", parse_mode="Markdown")
+        if len(args) not in [3, 4]:
+            await update.message.reply_text(
+                "❌ **Standard Format:**\n"
+                "• Delivery ခ မပါပါက:\n`/buy <ပစ္စည်းအမည်> | <အရေအတွက်> | <ဝယ်ဈေး>`\n"
+                "• Delivery ခ ပါပါက:\n`/buy <ပစ္စည်းအမည်> | <အရေအတွက်> | <ဝယ်ဈေး> | <Deliveryခ>`\n\n"
+                "👇 **နှိပ်ပြီး ကူးယူပါ:**\n`/buy iPhone 13 | 2 | 1200000 | 5000`", 
+                parse_mode="Markdown"
+            )
             return
-        item_name, qty, cost_price = args[0].strip(), int(args[1].strip()), float(args[2].strip())
+
+        item_name = args[0].strip()
+        qty = int(args[1].strip())
+        cost_price = float(args[2].strip())
+        deli_fee = float(args[3].strip()) if len(args) == 4 else 0.0
+        today = datetime.date.today().strftime("%Y-%m-%d")
+
         conn = get_db()
         cursor = conn.cursor()
+
+        # Stock Update/Insert
         cursor.execute("SELECT quantity FROM inventory WHERE item_name = ?", (item_name,))
         row = cursor.fetchone()
         if row:
             cursor.execute("UPDATE inventory SET quantity = ?, cost_price = ? WHERE item_name = ?", (row[0] + qty, cost_price, item_name))
         else:
             cursor.execute("INSERT INTO inventory (item_name, quantity, cost_price) VALUES (?, ?, ?)", (item_name, qty, cost_price))
+
+        # Record Delivery Fee in Expenses if provided
+        if deli_fee > 0:
+            cursor.execute("INSERT INTO expenses (title, amount, date) VALUES (?, ?, ?)", (f"{item_name} ဝယ်ယူမှု Delivery ခ", deli_fee, today))
+
         conn.commit()
         conn.close()
-        await update.message.reply_text(f"✅ **ပစ္စည်းဝယ်ယူမှု မှတ်တမ်းတင်ပြီးပါပြီ!**\n\n📦 ပစ္စည်း: `{item_name}`\n🔢 အရေအတွက်: `{qty}` ခု\n💵 ဝယ်ဈေး: `{cost_price:,.0f}` MMK", parse_mode="Markdown")
+
+        deli_msg = f"\n🚚 Delivery ခ: `{deli_fee:,.0f}` MMK (အသုံးစရိတ်ထဲ ပေါင်းထည့်ပြီး)" if deli_fee > 0 else ""
+        await update.message.reply_text(
+            f"✅ **ပစ္စည်းဝယ်ယူမှု မှတ်တမ်းတင်ပြီးပါပြီ!**\n\n"
+            f"📦 ပစ္စည်း: `{item_name}`\n"
+            f"🔢 အရေအတွက်: `{qty}` ခု\n"
+            f"💵 ဝယ်ဈေး (တစ်ခု): `{cost_price:,.0f}` MMK{deli_msg}", 
+            parse_mode="Markdown"
+        )
     except Exception as e:
         await update.message.reply_text(f"❌ အမှားအယွင်းရှိပါသည်: {str(e)}")
 
@@ -684,7 +712,7 @@ async def handle_button_clicks(update: Update, context: ContextTypes.DEFAULT_TYP
     text = update.message.text
 
     if text == "📦 ဝယ်ယူမည်":
-        await update.message.reply_text("📦 **ဝယ်ယူမှု စာရင်းသွင်းရန်:**\n`/buy <ပစ္စည်းအမည်> | <အရေအတွက်> | <ဝယ်ဈေး>`\n\n👇 **နှိပ်ပြီး ကူးယူပါ:**\n`/buy iPhone 13 | 2 | 1200000`", parse_mode="Markdown")
+        await update.message.reply_text("📦 **ဝယ်ယူမှု စာရင်းသွင်းရန်:**\n\n• Delivery ခ မပါပါက:\n`/buy <ပစ္စည်းအမည်> | <အရေအတွက်> | <ဝယ်ဈေး>`\n👇 `/buy iPhone 13 | 2 | 1200000`\n\n• Delivery ခ ပါပါက:\n`/buy <ပစ္စည်းအမည်> | <အရေအတွက်> | <ဝယ်ဈေး> | <Deliveryခ>`\n👇 `/buy iPhone 13 | 2 | 1200000 | 5000`", parse_mode="Markdown")
     elif text == "💵 လက်ငင်းရောင်းမည်":
         await update.message.reply_text("💵 **လက်ငင်း ရောင်းချရန်:**\n`/sell_cash <ဝယ်သူနာမည်> | <ပစ္စည်းအမည်> | <ရောင်းဈေး>`\n\n👇 **နှိပ်ပြီး ကူးယူပါ:**\n`/sell_cash AungAung | iPhone 13 | 1500000`", parse_mode="Markdown")
     elif text == "🎁 လက်ဆောင်ပေးရောင်းမည်":
