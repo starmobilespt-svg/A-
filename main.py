@@ -1,3 +1,21 @@
+[file-tag: code-generated-file-c8097466-fea4-44e3-9d13-11143b846083]
+တောင်းဆိုထားသည့်အတိုင်း **Stock စာရင်းများကို အလိုအလျောက် ပြသပေးသည့် စနစ်**၊ **Delivery ခ ထည့်သွင်းသည့် စနစ်**၊ **လက်ဆောင်ပစ္စည်း ထည့်ပေးသည့် စနစ်**၊ **အသုံးစရိတ် စာရင်း** နှင့် **လူနာမည် ခွဲရေး/နာမည်တူ စစ်ဆေးသည့် စနစ်** များ အားလုံး အပြည့်အစုံ ပါဝင်သော main.py Source Code နှင့် ရှင်းပြချက် ဖြစ်ပါသည်။
+### 🌟 အသစ်ပါဝင်လာသော စနစ်များ ရှင်းပြချက်
+ 1. **ရောင်းသည့်အခါ Stock စာရင်း အလိုအလျောက် ပြသပေးခြင်း:**
+   * **💵 လက်ငင်းရောင်းမည်**၊ **⏳ အရစ်ကျရောင်းမည်** သို့မဟုတ် **🎁 လက်ဆောင်ပေးရောင်းမည်** ခလုတ်များကို နှိပ်လိုက်သည်နှင့် လက်ရှိ ဆိုင်ထဲတွင် ရောင်းရန်ကျန်ရှိနေသော **Stock စာရင်းအမည်များနှင့် အရေအတွက်များ** ကို အရင်ဆုံး အဆင်သင့် ပြသပေးပါမည်။
+ 2. **ပစ္စည်းဝယ်ရာတွင် Delivery ခ ထည့်သွင်းခြင်း (/buy):**
+   * ပစ္စည်းဝယ်သည့်အခါ Delivery ခ ပါပါက အောက်ပါအတိုင်း ရိုက်နိုင်ပါသည်။
+   * **ပုံစံ:** /buy iPhone 13 | 2 | 1200000 | 5000
+   * *(ထည့်လိုက်သော 5,000 MMK Delivery ခကို ဆိုင်အသုံးစရိတ်ထဲသို့ Auto ထည့်ပေးပြီး လချုပ် အမြတ်/အရှုံးတွင် အလိုအလျောက် နှုတ်ပေးသွားပါမည်)*
+ 3. **လက်ဆောင် (Gift) ပါဝင်သော ရောင်းချမှု (/sell_gift & /sell_installment_gift):**
+   * **လက်ငင်းရောင်း ပုံစံ:** /sell_gift AungAung | iPhone 13 | 1500000 | Phone Cover
+   * **အရစ်ကျရောင်း ပုံစံ:** /sell_installment_gift MgMg | Phone | 1500000 | 300000 | 100000 | Screen Protector
+   * *(ထည့်ပေးလိုက်သော လက်ဆောင်ပစ္စည်းသည် Stock ထဲရှိနေပါက Stock ထဲမှ ၁ ခု Auto လျှော့ပေးသွားပါမည်)*
+ 4. **ကြွေးဆပ်ရာတွင် နာမည်ခွဲရေးရလွယ်ကူခြင်း နှင့် နာမည်တူစစ်ဆေးခြင်း (/pay):**
+   * နာမည်တွင် Space ပါသူများကို | ခံ၍ ရိုက်နိုင်ပါသည်။ (ဥပမာ - /pay Mg Mg | 100000)
+   * အကယ်၍ Mg Mg ဆိုသူ ၂ ယောက် သို့မဟုတ် စာရင်း ၂ ခု ဖြစ်နေပါက Bot မှ ဘာမှမလုပ်ဘဲ စာရင်း ID များကို ခွဲခြားပြပေးမည် ဖြစ်ပြီး ID ဖြင့် ပြန်လည် ပေးချေနိုင်ပါမည်။ (ဥပမာ - /pay 1 | 100000)
+### 💻 main.py Python Source Code အပြည့်အစုံ
+```python
 import sqlite3
 import pandas as pd
 import datetime
@@ -151,6 +169,22 @@ async def show_commands(update: Update, context: ContextTypes.DEFAULT_TYPE):
     )
     await update.message.reply_text(msg, parse_mode="Markdown")
 
+# Helper function to get available stock text
+def get_available_stock_info():
+    conn = get_db()
+    cursor = conn.cursor()
+    cursor.execute("SELECT item_name, quantity FROM inventory WHERE quantity > 0")
+    rows = cursor.fetchall()
+    conn.close()
+
+    if not rows:
+        return "⚠️ **လက်ရှိ ရောင်းရန် Stock ပစ္စည်း လုံးဝ မရှိသေးပါ!** (ကျေးဇူးပြု၍ ပစ္စည်း စာရင်းသွင်းပါ)"
+
+    msg = "📦 **လက်ရှိ ရောင်းရန် ရှိသော Stock မူရင်း ပစ္စည်းများ:**\n"
+    for r in rows:
+        msg += f"• `{r[0]}` - ကျန် `{r[1]}` ခု\n"
+    return msg
+
 # Command 1: /buy (Updated to support optional Delivery Fee)
 async def buy(update: Update, context: ContextTypes.DEFAULT_TYPE):
     try:
@@ -283,7 +317,13 @@ async def sell_cash(update: Update, context: ContextTypes.DEFAULT_TYPE):
     try:
         args = " ".join(context.args).split("|")
         if len(args) != 3:
-            await update.message.reply_text("❌ **Standard Format:**\n`/sell_cash <ဝယ်သူနာမည်> | <ပစ္စည်းအမည်> | <ရောင်းဈေး>`\n\n👇 **နှိပ်ပြီး ကူးယူပါ:**\n`/sell_cash AungAung | iPhone 13 | 1500000`", parse_mode="Markdown")
+            stock_info = get_available_stock_info()
+            await update.message.reply_text(
+                f"{stock_info}\n\n"
+                "❌ **Standard Format:**\n`/sell_cash <ဝယ်သူနာမည်> | <ပစ္စည်းအမည်> | <ရောင်းဈေး>`\n\n"
+                "👇 **နှိပ်ပြီး ကူးယူပါ:**\n`/sell_cash AungAung | iPhone 13 | 1500000`", 
+                parse_mode="Markdown"
+            )
             return
         customer, item_name, price = args[0].strip(), args[1].strip(), float(args[2].strip())
         today = datetime.date.today().strftime("%Y-%m-%d")
@@ -304,19 +344,23 @@ async def sell_cash(update: Update, context: ContextTypes.DEFAULT_TYPE):
     except Exception as e:
         await update.message.reply_text(f"❌ အမှားအယွင်းရှိပါသည်: {str(e)}")
 
-# Cash Sale with Gift (/sell_gift)
 async def sell_gift(update: Update, context: ContextTypes.DEFAULT_TYPE):
     try:
         args = " ".join(context.args).split("|")
         if len(args) != 4:
-            await update.message.reply_text("❌ **Standard Format:**\n`/sell_gift <ဝယ်သူနာမည်> | <ပစ္စည်းအမည်> | <ရောင်းဈေး> | <လက်ဆောင်ပစ္စည်း>`\n\n👇 **နှိပ်ပြီး ကူးယူပါ:**\n`/sell_gift AungAung | iPhone 13 | 1500000 | Phone Cover`", parse_mode="Markdown")
+            stock_info = get_available_stock_info()
+            await update.message.reply_text(
+                f"{stock_info}\n\n"
+                "❌ **Standard Format:**\n`/sell_gift <ဝယ်သူနာမည်> | <ပစ္စည်းအမည်> | <ရောင်းဈေး> | <လက်ဆောင်ပစ္စည်း>`\n\n"
+                "👇 **နှိပ်ပြီး ကူးယူပါ:**\n`/sell_gift AungAung | iPhone 13 | 1500000 | Phone Cover`", 
+                parse_mode="Markdown"
+            )
             return
         customer, item_name, price, gift = args[0].strip(), args[1].strip(), float(args[2].strip()), args[3].strip()
         today = datetime.date.today().strftime("%Y-%m-%d")
         conn = get_db()
         cursor = conn.cursor()
 
-        # Check Main Item Stock
         cursor.execute("SELECT quantity FROM inventory WHERE item_name = ?", (item_name,))
         row = cursor.fetchone()
         if not row or row[0] < 1:
@@ -324,10 +368,8 @@ async def sell_gift(update: Update, context: ContextTypes.DEFAULT_TYPE):
             conn.close()
             return
 
-        # Deduct Main Item Stock
         cursor.execute("UPDATE inventory SET quantity = quantity - 1 WHERE item_name = ?", (item_name,))
 
-        # Deduct Gift Stock if exists in inventory
         cursor.execute("SELECT quantity FROM inventory WHERE item_name = ?", (gift,))
         gift_row = cursor.fetchone()
         if gift_row and gift_row[0] > 0:
@@ -345,7 +387,13 @@ async def sell_installment(update: Update, context: ContextTypes.DEFAULT_TYPE):
     try:
         args = " ".join(context.args).split("|")
         if len(args) != 5:
-            await update.message.reply_text("❌ **Standard Format:**\n`/sell_installment <ဝယ်သူနာမည်> | <ပစ္စည်းအမည်> | <စုစုပေါင်းရောင်းဈေး> | <စပေါ်ငွေ> | <တစ်လ ပုံမှန်ပေးရမည့်ငွေ>`\n\n👇 **နှိပ်ပြီး ကူးယူပါ:**\n`/sell_installment MgMg | Phone | 1500000 | 300000 | 100000`", parse_mode="Markdown")
+            stock_info = get_available_stock_info()
+            await update.message.reply_text(
+                f"{stock_info}\n\n"
+                "❌ **Standard Format:**\n`/sell_installment <ဝယ်သူနာမည်> | <ပစ္စည်းအမည်> | <စုစုပေါင်းရောင်းဈေး> | <စပေါ်ငွေ> | <တစ်လ ပုံမှန်ပေးရမည့်ငွေ>`\n\n"
+                "👇 **နှိပ်ပြီး ကူးယူပါ:**\n`/sell_installment MgMg | Phone | 1500000 | 300000 | 100000`", 
+                parse_mode="Markdown"
+            )
             return
         customer, item_name, total_price, down_payment, monthly_pay = args[0].strip(), args[1].strip(), float(args[2].strip()), float(args[3].strip()), float(args[4].strip())
         today = datetime.date.today().strftime("%Y-%m-%d")
@@ -367,19 +415,23 @@ async def sell_installment(update: Update, context: ContextTypes.DEFAULT_TYPE):
     except Exception as e:
         await update.message.reply_text(f"❌ အမှားအယွင်းရှိပါသည်: {str(e)}")
 
-# Installment Sale with Gift (/sell_installment_gift)
 async def sell_installment_gift(update: Update, context: ContextTypes.DEFAULT_TYPE):
     try:
         args = " ".join(context.args).split("|")
         if len(args) != 6:
-            await update.message.reply_text("❌ **Standard Format:**\n`/sell_installment_gift <ဝယ်သူနာမည်> | <ပစ္စည်းအမည်> | <စုစုပေါင်းရောင်းဈေး> | <စပေါ်ငွေ> | <တစ်လ ပုံမှန်ပေးရမည့်ငွေ> | <လက်ဆောင်ပစ္စည်း>`\n\n👇 **နှိပ်ပြီး ကူးယူပါ:**\n`/sell_installment_gift MgMg | Phone | 1500000 | 300000 | 100000 | Screen Protector`", parse_mode="Markdown")
+            stock_info = get_available_stock_info()
+            await update.message.reply_text(
+                f"{stock_info}\n\n"
+                "❌ **Standard Format:**\n`/sell_installment_gift <ဝယ်သူနာမည်> | <ပစ္စည်းအမည်> | <စုစုပေါင်းရောင်းဈေး> | <စပေါ်ငွေ> | <တစ်လ ပုံမှန်ပေးရမည့်ငွေ> | <လက်ဆောင်ပစ္စည်း>`\n\n"
+                "👇 **နှိပ်ပြီး ကူးယူပါ:**\n`/sell_installment_gift MgMg | Phone | 1500000 | 300000 | 100000 | Screen Protector`", 
+                parse_mode="Markdown"
+            )
             return
         customer, item_name, total_price, down_payment, monthly_pay, gift = args[0].strip(), args[1].strip(), float(args[2].strip()), float(args[3].strip()), float(args[4].strip()), args[5].strip()
         today = datetime.date.today().strftime("%Y-%m-%d")
         conn = get_db()
         cursor = conn.cursor()
 
-        # Check Main Item Stock
         cursor.execute("SELECT quantity FROM inventory WHERE item_name = ?", (item_name,))
         row = cursor.fetchone()
         if not row or row[0] < 1:
@@ -387,10 +439,8 @@ async def sell_installment_gift(update: Update, context: ContextTypes.DEFAULT_TY
             conn.close()
             return
 
-        # Deduct Main Item Stock
         cursor.execute("UPDATE inventory SET quantity = quantity - 1 WHERE item_name = ?", (item_name,))
 
-        # Deduct Gift Stock if exists in inventory
         cursor.execute("SELECT quantity FROM inventory WHERE item_name = ?", (gift,))
         gift_row = cursor.fetchone()
         if gift_row and gift_row[0] > 0:
@@ -405,7 +455,6 @@ async def sell_installment_gift(update: Update, context: ContextTypes.DEFAULT_TY
     except Exception as e:
         await update.message.reply_text(f"❌ အမှားအယွင်းရှိပါသည်: {str(e)}")
 
-# Updated Pay Command (/pay)
 async def pay(update: Update, context: ContextTypes.DEFAULT_TYPE):
     try:
         raw_input = " ".join(context.args).strip()
@@ -429,7 +478,6 @@ async def pay(update: Update, context: ContextTypes.DEFAULT_TYPE):
         conn = get_db()
         cursor = conn.cursor()
 
-        # ID ဖြင့် ပေးချေခြင်း
         if target_str.isdigit():
             sale_id = int(target_str)
             cursor.execute("SELECT id, customer_name, item_name, total_price, paid_amount, gift_item FROM sales WHERE id = ? AND status = 'PENDING'", (sale_id,))
@@ -444,7 +492,6 @@ async def pay(update: Update, context: ContextTypes.DEFAULT_TYPE):
             conn.close()
             return
 
-        # နာမည်တူနေပါက ID ဖြင့် ရွေးခိုင်းခြင်း
         if len(rows) > 1:
             msg = f"⚠️ **'{target_str}' အမည်ဖြင့် အကြွေးကျန် စာရင်း ({len(rows)}) ခု တွေ့ရှိနေပါသည်။**\n\n"
             msg += "ဘယ်စာရင်းအတွက် ငွေဆပ်မည်နည်း? အောက်ပါ ID ဖြင့် ပြန်ပေးချေပါ:\n\n"
@@ -512,7 +559,6 @@ async def list_pending(update: Update, context: ContextTypes.DEFAULT_TYPE):
     msg += "💡 *စာရင်းမှား၍ ဖျက်လိုပါက:* `/delete_sale <ID>`"
     await update.message.reply_text(msg, parse_mode="Markdown")
 
-# 📊 လအလိုက် အရှုံးအမြတ် တွက်ချက်ပြသသည့် Function
 async def monthly_report(update: Update, context: ContextTypes.DEFAULT_TYPE):
     try:
         year_month = context.args[0].strip() if context.args else datetime.date.today().strftime("%Y-%m")
@@ -562,7 +608,6 @@ async def monthly_report(update: Update, context: ContextTypes.DEFAULT_TYPE):
     except Exception as e:
         await update.message.reply_text(f"❌ အမှားအယွင်းရှိပါသည်: {str(e)}")
 
-# Delete Commands
 async def delete_sale(update: Update, context: ContextTypes.DEFAULT_TYPE):
     try:
         if not context.args:
@@ -627,7 +672,6 @@ async def reset_callback_handler(update: Update, context: ContextTypes.DEFAULT_T
     elif query.data == "cancel_reset_all":
         await query.message.edit_text("❌ စာရင်းဖျက်ခြင်းကို ပယ်ဖျက်လိုက်ပါပြီ။")
 
-# Excel Import / Export
 async def export_excel(update: Update, context: ContextTypes.DEFAULT_TYPE):
     try:
         conn = get_db()
@@ -700,25 +744,42 @@ async def handle_excel_upload(update: Update, context: ContextTypes.DEFAULT_TYPE
     except Exception as e:
         await status_msg.edit_text(f"❌ Excel မှ စာရင်းသွင်းရာတွင် အမှားဖြစ်ပေါ်ပါသည်: {str(e)}")
 
-# Backup Database
 async def backup(update: Update, context: ContextTypes.DEFAULT_TYPE):
     try:
         await update.message.reply_document(document=open(DB_FILE, 'rb'), filename="database_backup.db", caption="📁 **Database Backup File ရရှိပါပြီ!**")
     except Exception as e:
         await update.message.reply_text(f"❌ Backup မထုတ်ယူနိုင်ပါ: {str(e)}")
 
-# Bottom Buttons Listener
 async def handle_button_clicks(update: Update, context: ContextTypes.DEFAULT_TYPE):
     text = update.message.text
 
     if text == "📦 ဝယ်ယူမည်":
         await update.message.reply_text("📦 **ဝယ်ယူမှု စာရင်းသွင်းရန်:**\n\n• Delivery ခ မပါပါက:\n`/buy <ပစ္စည်းအမည်> | <အရေအတွက်> | <ဝယ်ဈေး>`\n👇 `/buy iPhone 13 | 2 | 1200000`\n\n• Delivery ခ ပါပါက:\n`/buy <ပစ္စည်းအမည်> | <အရေအတွက်> | <ဝယ်ဈေး> | <Deliveryခ>`\n👇 `/buy iPhone 13 | 2 | 1200000 | 5000`", parse_mode="Markdown")
     elif text == "💵 လက်ငင်းရောင်းမည်":
-        await update.message.reply_text("💵 **လက်ငင်း ရောင်းချရန်:**\n`/sell_cash <ဝယ်သူနာမည်> | <ပစ္စည်းအမည်> | <ရောင်းဈေး>`\n\n👇 **နှိပ်ပြီး ကူးယူပါ:**\n`/sell_cash AungAung | iPhone 13 | 1500000`", parse_mode="Markdown")
+        stock_info = get_available_stock_info()
+        await update.message.reply_text(
+            f"{stock_info}\n\n"
+            "💵 **လက်ငင်း ရောင်းချရန်:**\n`/sell_cash <ဝယ်သူနာမည်> | <ပစ္စည်းအမည်> | <ရောင်းဈေး>`\n\n"
+            "👇 **နှိပ်ပြီး ကူးယူပါ:**\n`/sell_cash AungAung | iPhone 13 | 1500000`", 
+            parse_mode="Markdown"
+        )
     elif text == "🎁 လက်ဆောင်ပေးရောင်းမည်":
-        await update.message.reply_text("🎁 **လက်ဆောင်ပါဝင်သော ရောင်းချမှု ပုံစံများ:**\n\n၁။ **လက်ငင်းရောင်းချပါက:**\n`/sell_gift <ဝယ်သူနာမည်> | <ပစ္စည်းအမည်> | <ရောင်းဈေး> | <လက်ဆောင်ပစ္စည်း>`\n👇 `/sell_gift AungAung | iPhone 13 | 1500000 | Phone Cover`\n\n၂။ **အရစ်ကျရောင်းချပါက:**\n`/sell_installment_gift <ဝယ်သူနာမည်> | <ပစ္စည်းအမည်> | <စုစုပေါင်းရောင်းဈေး> | <စပေါ်ငွေ> | <တစ်လပေးရမည့်ငွေ> | <လက်ဆောင်ပစ္စည်း>`\n👇 `/sell_installment_gift MgMg | Phone | 1500000 | 300000 | 100000 | Screen Protector`", parse_mode="Markdown")
+        stock_info = get_available_stock_info()
+        await update.message.reply_text(
+            f"{stock_info}\n\n"
+            "🎁 **လက်ဆောင်ပါဝင်သော ရောင်းချမှု ပုံစံများ:**\n\n"
+            "၁။ **လက်ငင်းရောင်းချပါက:**\n`/sell_gift <ဝယ်သူနာမည်> | <ပစ္စည်းအမည်> | <ရောင်းဈေး> | <လက်ဆောင်ပစ္စည်း>`\n👇 `/sell_gift AungAung | iPhone 13 | 1500000 | Phone Cover`\n\n"
+            "၂။ **အရစ်ကျရောင်းချပါက:**\n`/sell_installment_gift <ဝယ်သူနာမည်> | <ပစ္စည်းအမည်> | <စုစုပေါင်းရောင်းဈေး> | <စပေါ်ငွေ> | <တစ်လပေးရမည့်ငွေ> | <လက်ဆောင်ပစ္စည်း>`\n👇 `/sell_installment_gift MgMg | Phone | 1500000 | 300000 | 100000 | Screen Protector`", 
+            parse_mode="Markdown"
+        )
     elif text == "⏳ အရစ်ကျရောင်းမည်":
-        await update.message.reply_text("⏳ **အရစ်ကျ ရောင်းချရန်:**\n`/sell_installment <ဝယ်သူနာမည်> | <ပစ္စည်းအမည်> | <စုစုပေါင်းရောင်းဈေး> | <စပေါ်ငွေ> | <တစ်လ ပုံမှန်ပေးရမည့်ငွေ>`\n\n👇 **နှိပ်ပြီး ကူးယူပါ:**\n`/sell_installment MgMg | Phone | 1500000 | 300000 | 100000`", parse_mode="Markdown")
+        stock_info = get_available_stock_info()
+        await update.message.reply_text(
+            f"{stock_info}\n\n"
+            "⏳ **အရစ်ကျ ရောင်းချရန်:**\n`/sell_installment <ဝယ်သူနာမည်> | <ပစ္စည်းအမည်> | <စုစုပေါင်းရောင်းဈေး> | <စပေါ်ငွေ> | <တစ်လ ပုံမှန်ပေးရမည့်ငွေ>`\n\n"
+            "👇 **နှိပ်ပြီး ကူးယူပါ:**\n`/sell_installment MgMg | Phone | 1500000 | 300000 | 100000`", 
+            parse_mode="Markdown"
+        )
     elif text == "💰 ငွေဆပ်မည်":
         await update.message.reply_text("💰 **အရစ်ကျ ငွေလာဆပ်ရန်:**\n`/pay <ဝယ်သူနာမည်> | <ပေးသည့်ပမာဏ>`\n\n👇 **နှိပ်ပြီး ကူးယူပါ:**\n`/pay Mg Mg | 100000`", parse_mode="Markdown")
     elif text == "💸 အသုံးစရိတ်ထည့်မည်":
@@ -749,7 +810,6 @@ async def handle_button_clicks(update: Update, context: ContextTypes.DEFAULT_TYP
     elif text in ["📜 Command များကြည့်မည်", "command", "/command"]:
         await show_commands(update, context)
 
-# Main Function
 def main():
     threading.Thread(target=run_flask, daemon=True).start()
     threading.Thread(target=auto_ping, daemon=True).start()
@@ -785,3 +845,5 @@ def main():
 
 if __name__ == '__main__':
     main()
+
+```
