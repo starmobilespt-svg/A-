@@ -114,7 +114,7 @@ init_db()
 def get_db():
     return sqlite3.connect(DB_FILE)
 
-# Custom Bottom Keyboard Menu (စာရင်းဖျက်/ပြင် ခလုတ် ပြောင်းထားပါသည်)
+# Custom Bottom Keyboard Menu
 def get_main_keyboard():
     keyboard = [
         [KeyboardButton("📦 ဝယ်ယူမည်"), KeyboardButton("💸 အသုံးစရိတ်")],
@@ -599,7 +599,7 @@ async def report(update: Update, context: ContextTypes.DEFAULT_TYPE):
         await update.message.reply_text(f"❌ အမှားအယွင်းရှိပါသည်: {str(e)}")
 
 # ----------------------------------------------------
-# 🔘 Unified Callback Handler for Buttons (Delete Menus, Reset, Edit Guide)
+# 🔘 Unified Callback Handler for Buttons
 # ----------------------------------------------------
 async def main_callback_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
     query = update.callback_query
@@ -873,7 +873,25 @@ async def handle_button_clicks(update: Update, context: ContextTypes.DEFAULT_TYP
         await update.message.reply_text("🗑️/✏️ **ဖျက်လို/ပြင်လိုသည့် အမျိုးအစားကို ရွေးချယ်ပါ:**", reply_markup=InlineKeyboardMarkup(keyboard), parse_mode="Markdown")
     
     elif text == "💰 ငွေဆပ်မည်":
-        await update.message.reply_text("💰 **အကြွေး ငွေလာဆပ်ရန်:**\n`/pay <ဝယ်သူနာမည်> | <ပေးသည့်ပမာဏ>`\n👇 `/pay Mg Mg | 100000`", parse_mode="Markdown")
+        conn = get_db()
+        cursor = conn.cursor()
+        cursor.execute("SELECT id, customer_name, item_name, total_price, paid_amount FROM sales WHERE status = 'PENDING'")
+        rows = cursor.fetchall()
+        conn.close()
+
+        if not rows:
+            await update.message.reply_text("🎉 **လက်ရှိ အကြွေးကျန်ရှိသူ လုံးဝ မရှိပါ။**", parse_mode="Markdown")
+        else:
+            msg = "💰 **ငွေဆပ်ရန် ကျန်ရှိသူများ စာရင်း (Copy ကူး၍ အသုံးပြုရန်):**\n\n"
+            code_block = ""
+            for r in rows:
+                rem = r[3] - r[4]
+                code_block += f"/pay {r[1]} | {rem:,.0f}\n"
+            
+            msg += f"```text\n{code_block}```\n"
+            msg += "💡 *အထက်ပါ စာသားများကို ဖိ၍ Copy ကူးပြီး ပေးချေနိုင်ပါသည် (သို့မဟုတ်)* `/pay <ဝယ်သူနာမည်> | <ပမာဏ>` *ဟု ရိုက်ထည့်နိုင်ပါသည်။*"
+            await update.message.reply_text(msg, parse_mode="Markdown")
+
     elif text == "📜 Command ကြည့်ရန်":
         await show_commands(update, context)
 
