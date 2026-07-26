@@ -521,7 +521,8 @@ async def list_pending(update: Update, context: ContextTypes.DEFAULT_TYPE):
     for r in rows:
         rem = r[3] - r[4]
         monthly_pay = r[5] if r[5] is not None else 0.0
-        msg += f"ID: {r[0]} | နာမည်: `{r[1]}` | ပစ္စည်း: {r[2]} | ကျန်ငွေ: {rem:,.0f} | ၁လပေး: {monthly_pay:,.0f}\n"
+        # Customer name is wrapped in backticks so it can be easily tapped/copied
+        msg += f"ID: {r[0]} | နာမည်: `{r[1]}` | ပစ္စည်း: {r[2]} | ကျန်ငွေ: {rem:,.0f} | ၁လပေး: {monthly_pay:,.0f}\n\n"
     
     await update.message.reply_text(msg, parse_mode="Markdown")
 
