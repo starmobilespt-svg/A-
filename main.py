@@ -517,13 +517,12 @@ async def list_pending(update: Update, context: ContextTypes.DEFAULT_TYPE):
         await update.message.reply_text("🎉 အရစ်ကျ ကျန်ရှိသူ စာရင်း မရှိပါ။")
         return
     
-    msg = "⏳ **ကြွေးကျန်သူများ စာရင်း (Copy ကူးနိုင်ပါသည်):**\n\n"
-    code_block = ""
+    msg = "⏳ **ကြွေးကျန်သူများ စာရင်း:**\n\n"
     for r in rows:
         rem = r[3] - r[4]
-        code_block += f"ID: {r[0]} | နာမည်: {r[1]} | ပစ္စည်း: {r[2]} | ကျန်ငွေ: {rem:,.0f}\n"
+        monthly_pay = r[5] if r[5] is not None else 0.0
+        msg += f"ID: {r[0]} | နာမည်: `{r[1]}` | ပစ္စည်း: {r[2]} | ကျန်ငွေ: {rem:,.0f} | ၁လပေး: {monthly_pay:,.0f}\n"
     
-    msg += f"```text\n{code_block}```"
     await update.message.reply_text(msg, parse_mode="Markdown")
 
 async def report(update: Update, context: ContextTypes.DEFAULT_TYPE):
