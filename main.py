@@ -516,9 +516,14 @@ async def list_pending(update: Update, context: ContextTypes.DEFAULT_TYPE):
     if not rows:
         await update.message.reply_text("🎉 အရစ်ကျ ကျန်ရှိသူ စာရင်း မရှိပါ။")
         return
-    msg = "⏳ **ကြွေးကျန်သူများ စာရင်း:**\n\n"
+    
+    msg = "⏳ **ကြွေးကျန်သူများ စာရင်း (Copy ကူးနိုင်ပါသည်):**\n\n"
+    code_block = ""
     for r in rows:
-        msg += f"🆔 ID: `{r[0]}` | 👤 **{r[1]}** ({r[2]})\n  ကျန်ငွေ: `{r[3] - r[4]:,.0f}` MMK\n\n"
+        rem = r[3] - r[4]
+        code_block += f"ID: {r[0]} | နာမည်: {r[1]} | ပစ္စည်း: {r[2]} | ကျန်ငွေ: {rem:,.0f}\n"
+    
+    msg += f"```text\n{code_block}```"
     await update.message.reply_text(msg, parse_mode="Markdown")
 
 async def report(update: Update, context: ContextTypes.DEFAULT_TYPE):
@@ -873,25 +878,7 @@ async def handle_button_clicks(update: Update, context: ContextTypes.DEFAULT_TYP
         await update.message.reply_text("🗑️/✏️ **ဖျက်လို/ပြင်လိုသည့် အမျိုးအစားကို ရွေးချယ်ပါ:**", reply_markup=InlineKeyboardMarkup(keyboard), parse_mode="Markdown")
     
     elif text == "💰 ငွေဆပ်မည်":
-        conn = get_db()
-        cursor = conn.cursor()
-        cursor.execute("SELECT id, customer_name, item_name, total_price, paid_amount FROM sales WHERE status = 'PENDING'")
-        rows = cursor.fetchall()
-        conn.close()
-
-        if not rows:
-            await update.message.reply_text("🎉 **လက်ရှိ အကြွေးကျန်ရှိသူ လုံးဝ မရှိပါ။**", parse_mode="Markdown")
-        else:
-            msg = "💰 **ငွေဆပ်ရန် ကျန်ရှိသူများ စာရင်း (Copy ကူး၍ အသုံးပြုရန်):**\n\n"
-            code_block = ""
-            for r in rows:
-                rem = r[3] - r[4]
-                code_block += f"/pay {r[1]} | {rem:,.0f}\n"
-            
-            msg += f"```text\n{code_block}```\n"
-            msg += "💡 *အထက်ပါ စာသားများကို ဖိ၍ Copy ကူးပြီး ပေးချေနိုင်ပါသည် (သို့မဟုတ်)* `/pay <ဝယ်သူနာမည်> | <ပမာဏ>` *ဟု ရိုက်ထည့်နိုင်ပါသည်။*"
-            await update.message.reply_text(msg, parse_mode="Markdown")
-
+        await update.message.reply_text("💰 **အကြွေး ငွေလာဆပ်ရန်:**\n`/pay <ဝယ်သူနာမည်> | <ပေးသည့်ပမာဏ>`\n👇 `/pay Mg Mg | 100000`", parse_mode="Markdown")
     elif text == "📜 Command ကြည့်ရန်":
         await show_commands(update, context)
 
