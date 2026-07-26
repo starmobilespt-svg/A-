@@ -148,7 +148,7 @@ async def show_commands(update: Update, context: ContextTypes.DEFAULT_TYPE):
         "`/sell_installment MgMg | Phone | 1500000 | 300000 | 100000`\n"
         "`/sell_installment_gift MgMg | Phone | 1500000 | 300000 | 100000 | Cover`\n\n"
         "💰 **၃။ ငွေဆပ်ခြင်း / ငွေလက်ကျန် / အသုံးစရိတ်:**\n"
-        "`/pay Mg Mg | 100000` (အကြွေးဆပ်ရန်)\n"
+        "`/pay Mg Mg | 100000` (အကြွေးဆပ်ရန် - နာမည်ဖြင့် (သို့) ID ဖြင့် `/pay 10 | 100000` ဟုလည်း ဆပ်နိုင်သည်)\n"
         "`/add_balance 150000` (ငွေလက်ကျန်ထည့်ရန်)\n"
         "`/expense မီးဖိုး | 50000` (အသုံးစရိတ်)\n\n"
         "⏳ **၄။ ယခင်စာရင်းဟောင်းများ ထည့်ရန်:**\n"
@@ -453,12 +453,14 @@ async def pay(update: Update, context: ContextTypes.DEFAULT_TYPE):
             cursor.execute("SELECT id, customer_name, item_name, total_price, paid_amount, gift_item FROM sales WHERE id = ? AND status = 'PENDING'", (sale_id,))
             rows = cursor.fetchall()
         else:
-            customer = target_str
-            cursor.execute("SELECT id, customer_name, item_name, total_price, paid_amount, gift_item FROM sales WHERE customer_name = ? AND status = 'PENDING' AND sale_type = 'INSTALLMENT'", (customer,))
-            rows = cursor.fetchall()
+            # Flexible matching (ignores extra spaces and case differences)
+            norm_target = " ".join(target_str.split()).lower()
+            cursor.execute("SELECT id, customer_name, item_name, total_price, paid_amount, gift_item FROM sales WHERE status = 'PENDING' AND sale_type = 'INSTALLMENT'")
+            all_pending = cursor.fetchall()
+            rows = [r for r in all_pending if " ".join(r[1].split()).lower() == norm_target]
 
         if not rows:
-            await update.message.reply_text(f"❌ `{target_str}` အတွက် အကြွေးစာရင်း မတွေ့ပါ။", parse_mode="Markdown")
+            await update.message.reply_text(f"❌ `{target_str}` အတွက် အကြွေးစာရင်း မတွေ့ပါ။\n💡 (အကြံပြုချက်: နာမည်အစား ID ဖြင့် `/pay 10 | 107600` ဟု အလွယ်ဆုံး သုံးနိုင်ပါသည်)", parse_mode="Markdown")
             conn.close()
             return
 
@@ -521,7 +523,6 @@ async def list_pending(update: Update, context: ContextTypes.DEFAULT_TYPE):
     for r in rows:
         rem = r[3] - r[4]
         monthly_pay = r[5] if r[5] is not None else 0.0
-        # Customer name is wrapped in backticks so it can be easily tapped/copied
         msg += f"ID: {r[0]} | နာမည်: `{r[1]}` | ပစ္စည်း: {r[2]} | ကျန်ငွေ: {rem:,.0f} | ၁လပေး: {monthly_pay:,.0f}\n\n"
     
     await update.message.reply_text(msg, parse_mode="Markdown")
@@ -878,7 +879,7 @@ async def handle_button_clicks(update: Update, context: ContextTypes.DEFAULT_TYP
         await update.message.reply_text("🗑️/✏️ **ဖျက်လို/ပြင်လိုသည့် အမျိုးအစားကို ရွေးချယ်ပါ:**", reply_markup=InlineKeyboardMarkup(keyboard), parse_mode="Markdown")
     
     elif text == "💰 ငွေဆပ်မည်":
-        await update.message.reply_text("💰 **အကြွေး ငွေလာဆပ်ရန်:**\n`/pay <ဝယ်သူနာမည်> | <ပေးသည့်ပမာဏ>`\n👇 `/pay Mg Mg | 100000`", parse_mode="Markdown")
+        await update.message.reply_text("💰 **အကြွေး ငွေလာဆပ်ရန်:**\n`/pay <ဝယ်သူနာမည် သို့မဟုတ် ID> | <ပေးသည့်ပမာဏ>`\n👇 `/pay 10 | 107600` (သို့မဟုတ်) `/pay Ei Thandar Phyo | 107600`", parse_mode="Markdown")
     elif text == "📜 Command ကြည့်ရန်":
         await show_commands(update, context)
 
