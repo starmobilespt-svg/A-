@@ -509,14 +509,19 @@ async def stock(update: Update, context: ContextTypes.DEFAULT_TYPE):
 async def list_pending(update: Update, context: ContextTypes.DEFAULT_TYPE):
     await send_list_page(update, context, update.message.from_user.id, page=0, is_callback=False)
 
+# ====================================================
+# 📊 အရှုံးအမြတ် လချုပ် Report (Opening Balance အပါအဝင်)
+# ====================================================
 async def report(update: Update, context: ContextTypes.DEFAULT_TYPE):
     user_id = update.message.from_user.id
     try:
         args = context.args
         if args:
             period = args[0].strip()
-            if len(period) == 4: date_format, period_label = '%Y', f"{period} ခုနှစ်ချုပ်"
-            else: date_format, period_label = '%Y-%m', f"{period} လချုပ်"
+            if len(period) == 4:
+                date_format, period_label = '%Y', f"{period} ခုနှစ်ချုပ်"
+            else:
+                date_format, period_label = '%Y-%m', f"{period} လချုပ်"
         else:
             period = datetime.now(MM_TZ).strftime("%Y-%m")
             date_format, period_label = '%Y-%m', f"{period} လချုပ်"
@@ -524,6 +529,7 @@ async def report(update: Update, context: ContextTypes.DEFAULT_TYPE):
         conn = get_db()
         cursor = conn.cursor()
 
+        # ၁။ ယခုကာလအတွက် (Current Month/Year)
         cursor.execute(f"SELECT s.total_price, s.paid_amount, COALESCE(i.cost_price, 0) FROM sales s LEFT JOIN inventory i ON s.item_name = i.item_name AND s.user_id = i.user_id WHERE s.user_id = ? AND strftime('{date_format}', s.date) = ?", (user_id, period))
         sales_rows = cursor.fetchall()
         cursor.execute(f"SELECT SUM(amount) FROM expenses WHERE user_id = ? AND strftime('{date_format}', date) = ?", (user_id, period))
@@ -532,6 +538,18 @@ async def report(update: Update, context: ContextTypes.DEFAULT_TYPE):
         added_capital = cursor.fetchone()[0] or 0.0
         cursor.execute(f"SELECT SUM(total_cost) FROM purchases WHERE user_id = ? AND strftime('{date_format}', date) = ?", (user_id, period))
         total_purchases = cursor.fetchone()[0] or 0.0
+
+        # ၂။ ယခင်လများအတွက် လက်ကျန် (Opening Balance) တွက်ချက်ခြင်း (< ?)
+        cursor.execute(f"SELECT SUM(paid_amount) FROM sales WHERE user_id = ? AND strftime('{date_format}', date) < ?", (user_id, period))
+        past_collected = cursor.fetchone()[0] or 0.0
+        cursor.execute(f"SELECT SUM(amount) FROM expenses WHERE user_id = ? AND strftime('{date_format}', date) < ?", (user_id, period))
+        past_expense = cursor.fetchone()[0] or 0.0
+        cursor.execute(f"SELECT SUM(amount) FROM capital WHERE user_id = ? AND strftime('{date_format}', date) < ?", (user_id, period))
+        past_capital = cursor.fetchone()[0] or 0.0
+        cursor.execute(f"SELECT SUM(total_cost) FROM purchases WHERE user_id = ? AND strftime('{date_format}', date) < ?", (user_id, period))
+        past_purchases = cursor.fetchone()[0] or 0.0
+
+        # ၃။ Stock တန်ဖိုး 
         cursor.execute("SELECT SUM(quantity * cost_price) FROM inventory WHERE user_id = ? AND quantity > 0", (user_id,))
         total_stock = cursor.fetchone()[0] or 0.0
         conn.close()
@@ -542,10 +560,20 @@ async def report(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
         net_profit = total_sales_value - total_cogs - total_expense
         profit_status = "🟢 အမြတ်" if net_profit >= 0 else "🔴 အရှုံး"
-        cash_balance = added_capital + total_collected - total_expense - total_purchases
+
+        # ယခင်လ လက်ကျန်ငွေ (Opening Balance)
+        opening_balance = past_capital + past_collected - past_expense - past_purchases
+        
+        # ယခုလ အဝင်အထွက် (Current Month Net Flow)
+        current_month_cashflow = added_capital + total_collected - total_expense - total_purchases
+
+        # စုစုပေါင်း နောက်ဆုံးငွေလက်ကျန် (Closing Balance) = အဟောင်း + အသစ်
+        closing_balance = opening_balance + current_month_cashflow
 
         msg = (
             f"📊 **{period_label} အရှုံးအမြတ်နှင့် လက်ကျန် စာရင်း**\n\n"
+            f"🏦 **ယခင်လ လက်ကျန်ငွေ (Opening):** `{opening_balance:,.0f}` MMK\n"
+            "───────────────────\n"
             f"🛒 အရောင်းပမာဏ (စုစုပေါင်း): `{total_sales_value:,.0f}` MMK\n"
             f"💵 ရောင်းရငွေ (လက်ဝယ်ရငွေ): `{total_collected:,.0f}` MMK\n"
             f"📉 ရရန်ကျန် အကြွေးငွေ: `{(total_sales_value - total_collected):,.0f}` MMK\n"
@@ -555,9 +583,10 @@ async def report(update: Update, context: ContextTypes.DEFAULT_TYPE):
             f"📤 အဝယ်စရိတ်: `{total_purchases:,.0f}` MMK\n"
             f"💸 အသုံးစရိတ်: `{total_expense:,.0f}` MMK\n"
             "───────────────────\n"
-            f"{profit_status} (အသားတင်): `{abs(net_profit):,.0f}` MMK\n"
-            f"💰 **စာရင်းအရ လက်ကျန်ငွေ**: `{cash_balance:,.0f}` MMK\n\n"
-            f"📦 **စုစုပေါင်း Stock တန်ဖိုးငွေ:** `{total_stock:,.0f}` MMK"
+            f"{profit_status} (ယခုလ အသားတင်): `{abs(net_profit):,.0f}` MMK\n"
+            f"💰 **စုစုပေါင်း နောက်ဆုံးငွေလက်ကျန်**: `{closing_balance:,.0f}` MMK\n"
+            f"   *(ယခင်လက်ကျန် + ယခုလဝင်ငွေ - ယခုလထွက်ငွေ)*\n\n"
+            f"📦 **ဆိုင်ရှိ Stock တန်ဖိုးငွေ:** `{total_stock:,.0f}` MMK"
         )
         await update.message.reply_text(msg, parse_mode="Markdown")
     except Exception as e:
@@ -632,7 +661,7 @@ async def main_callback_handler(update: Update, context: ContextTypes.DEFAULT_TY
     elif data == "guide_edit":
         await query.edit_message_text("✏️ **စာရင်းပြင်ရန်:**\n၁။ မှားယွင်းသော စာရင်းကို အရင်ဖျက်ပါ။ ပြီးမှ အသစ်ပြန်သွင်းပါ။\n၂။ သို့မဟုတ် Excel Backup ယူပြီး ပြင်ဆင်ကာ Bot ထဲသို့ File အဖြစ် ပြန်ပို့ပါ။", parse_mode="Markdown")
     
-    # ဖျက်မည့် Menu များကို ပြသပေးသော အပိုင်း...
+    # ဖျက်မည့် Menu များကို ပြသပေးသော အပိုင်း
     elif data == "menu_del_sale":
         conn = get_db()
         cursor = conn.cursor()
@@ -674,7 +703,7 @@ async def main_callback_handler(update: Update, context: ContextTypes.DEFAULT_TY
         keyboard.append([InlineKeyboardButton("🔙 နောက်သို့", callback_data="cancel_action")])
         await query.edit_message_text("🗑️ **ဖျက်လိုသော Stock ပစ္စည်းကို ရွေးပါ:**", reply_markup=InlineKeyboardMarkup(keyboard), parse_mode="Markdown")
 
-    # အမှန်တကယ် ဖျက်ပစ်မည့် Action များကို ပြုလုပ်သော အပိုင်း...
+    # အမှန်တကယ် ဖျက်ပစ်မည့် Action များကို ပြုလုပ်သော အပိုင်း
     elif data.startswith("do_del_sale_"):
         sale_id = data.split("_")[3]
         conn = get_db()
