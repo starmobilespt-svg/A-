@@ -21,21 +21,7 @@ BOT_TOKEN = "8939067464:AAFwfWTwtzJGlCS-Vh3aUlt55NRS2tgY4wg"
 DB_FILE = "shop_management.db"
 
 # ====================================================
-# 🛡️ STRICT ADMIN SECURITY SYSTEM (Admin များစာရင်း)
-# ====================================================
-ADMIN_IDS = [8668319365, 8366104238] 
-
-class AdminFilter(filters.BaseFilter):
-    def filter(self, update: Update) -> bool:
-        user = update.effective_user
-        if not user:
-            return False
-        return user.id in ADMIN_IDS
-
-admin_filter = AdminFilter()
-
-# ====================================================
-# 🌐 Auto Ping & Auto Backup စနစ်
+# 🌐 Auto Ping (Bot အိပ်မသွားစေရန်)
 # ====================================================
 web_app = Flask(__name__)
 
@@ -47,36 +33,7 @@ def run_flask():
     port = int(os.environ.get("PORT", 8080))
     web_app.run(host='0.0.0.0', port=port)
 
-def send_auto_backup():
-    try:
-        conn = get_db()
-        df_inventory = pd.read_sql_query("SELECT * FROM inventory", conn)
-        df_sales = pd.read_sql_query("SELECT * FROM sales", conn)
-        df_expenses = pd.read_sql_query("SELECT * FROM expenses", conn)
-        df_capital = pd.read_sql_query("SELECT * FROM capital", conn)
-        df_purchases = pd.read_sql_query("SELECT * FROM purchases", conn)
-        conn.close()
-        
-        file_path = "Auto_Backup_Shop.xlsx"
-        with pd.ExcelWriter(file_path, engine='openpyxl') as writer:
-            df_inventory.to_excel(writer, sheet_name='Inventory', index=False)
-            df_sales.to_excel(writer, sheet_name='Sales', index=False)
-            df_expenses.to_excel(writer, sheet_name='Expenses', index=False)
-            df_capital.to_excel(writer, sheet_name='Capital', index=False)
-            df_purchases.to_excel(writer, sheet_name='Purchases', index=False)
-        
-        for admin_id in ADMIN_IDS:
-            with open(file_path, 'rb') as f:
-                requests.post(
-                    f"https://api.telegram.org/bot{BOT_TOKEN}/sendDocument",
-                    data={'chat_id': admin_id, 'caption': '🔄 ၆ နာရီတစ်ကြိမ် အလိုအလျောက် စာရင်း Backup'},
-                    files={'document': f}
-                )
-    except Exception as e:
-        print("Auto Backup Error:", str(e))
-
 def auto_ping():
-    last_backup = time.time()
     while True:
         time.sleep(14 * 60)
         render_url = os.environ.get("RENDER_EXTERNAL_URL")
@@ -85,30 +42,26 @@ def auto_ping():
                 requests.get(render_url)
             except Exception:
                 pass
-        
-        if time.time() - last_backup > 6 * 3600:
-            if ADMIN_IDS:
-                send_auto_backup()
-            last_backup = time.time()
 
 # ====================================================
-# 📦 Database Setup
+# 📦 Multi-User Database Setup
 # ====================================================
 def init_db():
     conn = sqlite3.connect(DB_FILE)
     cursor = conn.cursor()
     
-    cursor.execute('''CREATE TABLE IF NOT EXISTS inventory (id INTEGER PRIMARY KEY AUTOINCREMENT, item_name TEXT UNIQUE, quantity INTEGER, cost_price REAL)''')
-    cursor.execute('''CREATE TABLE IF NOT EXISTS sales (id INTEGER PRIMARY KEY AUTOINCREMENT, customer_name TEXT, item_name TEXT, sale_type TEXT, total_price REAL, paid_amount REAL, monthly_payment REAL, status TEXT, date TEXT, gift_item TEXT DEFAULT '')''')
+    # user_id ကို table တိုင်းတွင် ထည့်သွင်းထားသည်
+    cursor.execute('''CREATE TABLE IF NOT EXISTS inventory (id INTEGER PRIMARY KEY AUTOINCREMENT, user_id INTEGER, item_name TEXT, quantity INTEGER, cost_price REAL, UNIQUE(user_id, item_name))''')
+    cursor.execute('''CREATE TABLE IF NOT EXISTS sales (id INTEGER PRIMARY KEY AUTOINCREMENT, user_id INTEGER, customer_name TEXT, item_name TEXT, sale_type TEXT, total_price REAL, paid_amount REAL, monthly_payment REAL, status TEXT, date TEXT, gift_item TEXT DEFAULT '')''')
     
     cursor.execute("PRAGMA table_info(sales)")
     columns = [column[1] for column in cursor.fetchall()]
     if 'gift_item' not in columns:
         cursor.execute("ALTER TABLE sales ADD COLUMN gift_item TEXT DEFAULT ''")
 
-    cursor.execute('''CREATE TABLE IF NOT EXISTS expenses (id INTEGER PRIMARY KEY AUTOINCREMENT, title TEXT, amount REAL, date TEXT)''')
-    cursor.execute('''CREATE TABLE IF NOT EXISTS capital (id INTEGER PRIMARY KEY AUTOINCREMENT, amount REAL, date TEXT)''')
-    cursor.execute('''CREATE TABLE IF NOT EXISTS purchases (id INTEGER PRIMARY KEY AUTOINCREMENT, item_name TEXT, quantity INTEGER, total_cost REAL, date TEXT)''')
+    cursor.execute('''CREATE TABLE IF NOT EXISTS expenses (id INTEGER PRIMARY KEY AUTOINCREMENT, user_id INTEGER, title TEXT, amount REAL, date TEXT)''')
+    cursor.execute('''CREATE TABLE IF NOT EXISTS capital (id INTEGER PRIMARY KEY AUTOINCREMENT, user_id INTEGER, amount REAL, date TEXT)''')
+    cursor.execute('''CREATE TABLE IF NOT EXISTS purchases (id INTEGER PRIMARY KEY AUTOINCREMENT, user_id INTEGER, item_name TEXT, quantity INTEGER, total_cost REAL, date TEXT)''')
 
     conn.commit()
     conn.close()
@@ -138,7 +91,7 @@ def get_main_keyboard():
 # 🚀 Commands & Handlers
 # ====================================================
 async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    await update.message.reply_text("မင်္ဂလာပါ Admin! စာရင်းကိုင် Bot မှ ကြိုဆိုပါသည်။", reply_markup=get_main_keyboard())
+    await update.message.reply_text("မင်္ဂလာပါ! သင်၏ ကိုယ်ပိုင် စာရင်းကိုင် Bot မှ ကြိုဆိုပါသည်။", reply_markup=get_main_keyboard())
 
 async def show_commands(update: Update, context: ContextTypes.DEFAULT_TYPE):
     msg = (
@@ -152,10 +105,10 @@ async def show_commands(update: Update, context: ContextTypes.DEFAULT_TYPE):
     )
     await update.message.reply_text(msg, parse_mode="Markdown")
 
-def get_available_stock_info():
+def get_available_stock_info(user_id):
     conn = get_db()
     cursor = conn.cursor()
-    cursor.execute("SELECT item_name, quantity FROM inventory WHERE quantity > 0")
+    cursor.execute("SELECT item_name, quantity FROM inventory WHERE user_id = ? AND quantity > 0", (user_id,))
     rows = cursor.fetchall()
     conn.close()
     if not rows: return "⚠️ **လက်ရှိ ရောင်းရန် Stock ပစ္စည်း လုံးဝ မရှိသေးပါ!**"
@@ -164,12 +117,13 @@ def get_available_stock_info():
     return msg
 
 async def add_balance(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    user_id = update.message.from_user.id
     try:
         amount = float(context.args[0].strip())
         today = datetime.date.today().strftime("%Y-%m-%d")
         conn = get_db()
         cursor = conn.cursor()
-        cursor.execute("INSERT INTO capital (amount, date) VALUES (?, ?)", (amount, today))
+        cursor.execute("INSERT INTO capital (user_id, amount, date) VALUES (?, ?, ?)", (user_id, amount, today))
         conn.commit()
         conn.close()
         await update.message.reply_text(f"💵 **ငွေလက်ကျန် ထည့်သွင်းပြီးပါပြီ!**\n💰 ပမာဏ: `{amount:,.0f}` MMK", parse_mode="Markdown")
@@ -177,6 +131,7 @@ async def add_balance(update: Update, context: ContextTypes.DEFAULT_TYPE):
         await update.message.reply_text("❌ `/add_balance <ပမာဏ>` ဟုသာ ရိုက်ပါ။")
 
 async def buy(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    user_id = update.message.from_user.id
     try:
         args = " ".join(context.args).split("|")
         item_name, qty, cost_price = args[0].strip(), int(args[1].strip()), float(args[2].strip())
@@ -185,16 +140,16 @@ async def buy(update: Update, context: ContextTypes.DEFAULT_TYPE):
         
         conn = get_db()
         cursor = conn.cursor()
-        cursor.execute("SELECT quantity FROM inventory WHERE item_name = ?", (item_name,))
+        cursor.execute("SELECT quantity FROM inventory WHERE user_id = ? AND item_name = ?", (user_id, item_name))
         row = cursor.fetchone()
         if row:
-            cursor.execute("UPDATE inventory SET quantity = ?, cost_price = ? WHERE item_name = ?", (row[0] + qty, cost_price, item_name))
+            cursor.execute("UPDATE inventory SET quantity = ?, cost_price = ? WHERE user_id = ? AND item_name = ?", (row[0] + qty, cost_price, user_id, item_name))
         else:
-            cursor.execute("INSERT INTO inventory (item_name, quantity, cost_price) VALUES (?, ?, ?)", (item_name, qty, cost_price))
+            cursor.execute("INSERT INTO inventory (user_id, item_name, quantity, cost_price) VALUES (?, ?, ?, ?)", (user_id, item_name, qty, cost_price))
             
-        cursor.execute("INSERT INTO purchases (item_name, quantity, total_cost, date) VALUES (?, ?, ?, ?)", (item_name, qty, qty * cost_price, today))
+        cursor.execute("INSERT INTO purchases (user_id, item_name, quantity, total_cost, date) VALUES (?, ?, ?, ?, ?)", (user_id, item_name, qty, qty * cost_price, today))
         if deli_fee > 0:
-            cursor.execute("INSERT INTO expenses (title, amount, date) VALUES (?, ?, ?)", (f"{item_name} ဝယ်ယူမှု Delivery ခ", deli_fee, today))
+            cursor.execute("INSERT INTO expenses (user_id, title, amount, date) VALUES (?, ?, ?, ?)", (user_id, f"{item_name} ဝယ်ယူမှု Delivery ခ", deli_fee, today))
             
         conn.commit()
         conn.close()
@@ -203,12 +158,13 @@ async def buy(update: Update, context: ContextTypes.DEFAULT_TYPE):
         await update.message.reply_text("❌ `/buy <ပစ္စည်း> | <အရေအတွက်> | <ဝယ်ဈေး>` ဟုသာ ရိုက်ပါ။")
 
 async def add_expense(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    user_id = update.message.from_user.id
     try:
         args = " ".join(context.args).split("|")
         title, amount = args[0].strip(), float(args[1].strip())
         conn = get_db()
         cursor = conn.cursor()
-        cursor.execute("INSERT INTO expenses (title, amount, date) VALUES (?, ?, ?)", (title, amount, datetime.date.today().strftime("%Y-%m-%d")))
+        cursor.execute("INSERT INTO expenses (user_id, title, amount, date) VALUES (?, ?, ?, ?)", (user_id, title, amount, datetime.date.today().strftime("%Y-%m-%d")))
         conn.commit()
         conn.close()
         await update.message.reply_text(f"💸 **ဆိုင်အသုံးစရိတ် စာရင်းသွင်းပြီးပါပြီ!**\n📝 အကြောင်းအရာ: `{title}`\n💰 ကျသင့်ငွေ: `{amount:,.0f}` MMK", parse_mode="Markdown")
@@ -216,15 +172,16 @@ async def add_expense(update: Update, context: ContextTypes.DEFAULT_TYPE):
         await update.message.reply_text("❌ `/expense <အကြောင်းအရာ> | <ပမာဏ>` ဟုသာ ရိုက်ပါ။")
 
 async def add_stock(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    user_id = update.message.from_user.id
     try:
         args = " ".join(context.args).split("|")
         item_name, qty, cost_price = args[0].strip(), int(args[1].strip()), float(args[2].strip())
         conn = get_db()
         cursor = conn.cursor()
-        cursor.execute("SELECT quantity FROM inventory WHERE item_name = ?", (item_name,))
+        cursor.execute("SELECT quantity FROM inventory WHERE user_id = ? AND item_name = ?", (user_id, item_name))
         row = cursor.fetchone()
-        if row: cursor.execute("UPDATE inventory SET quantity = ?, cost_price = ? WHERE item_name = ?", (row[0] + qty, cost_price, item_name))
-        else: cursor.execute("INSERT INTO inventory (item_name, quantity, cost_price) VALUES (?, ?, ?)", (item_name, qty, cost_price))
+        if row: cursor.execute("UPDATE inventory SET quantity = ?, cost_price = ? WHERE user_id = ? AND item_name = ?", (row[0] + qty, cost_price, user_id, item_name))
+        else: cursor.execute("INSERT INTO inventory (user_id, item_name, quantity, cost_price) VALUES (?, ?, ?, ?)", (user_id, item_name, qty, cost_price))
         conn.commit()
         conn.close()
         await update.message.reply_text(f"📦 **Stock လက်ကျန် ထည့်သွင်းပြီးပါပြီ!**\n📦 ပစ္စည်း: `{item_name}`\n🔢 အရေအတွက်: `{qty}` ခု", parse_mode="Markdown")
@@ -232,12 +189,13 @@ async def add_stock(update: Update, context: ContextTypes.DEFAULT_TYPE):
         await update.message.reply_text("❌ `/add_stock <ပစ္စည်းအမည်> | <အရေအတွက်> | <ဝယ်ဈေး>` ဟုသာ ရိုက်ပါ။")
 
 async def add_credit(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    user_id = update.message.from_user.id
     try:
         args = " ".join(context.args).split("|")
         customer, item_name, total_price, monthly_pay = args[0].strip(), args[1].strip(), float(args[2].strip()), float(args[3].strip())
         conn = get_db()
         cursor = conn.cursor()
-        cursor.execute("INSERT INTO sales (customer_name, item_name, sale_type, total_price, paid_amount, monthly_payment, status, date, gift_item) VALUES (?, ?, 'INSTALLMENT', ?, 0, ?, 'PENDING', ?, '')", (customer, item_name, total_price, monthly_pay, datetime.date.today().strftime("%Y-%m-%d")))
+        cursor.execute("INSERT INTO sales (user_id, customer_name, item_name, sale_type, total_price, paid_amount, monthly_payment, status, date, gift_item) VALUES (?, ?, ?, 'INSTALLMENT', ?, 0, ?, 'PENDING', ?, '')", (user_id, customer, item_name, total_price, monthly_pay, datetime.date.today().strftime("%Y-%m-%d")))
         sale_id = cursor.lastrowid
         conn.commit()
         conn.close()
@@ -246,18 +204,19 @@ async def add_credit(update: Update, context: ContextTypes.DEFAULT_TYPE):
         await update.message.reply_text("❌ `/add_credit <ဝယ်သူ> | <ပစ္စည်း> | <အကြွေးစုစုပေါင်း> | <တစ်လပေးရမည့်ငွေ>` ဟုသာ ရိုက်ပါ။")
 
 async def sell_cash(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    user_id = update.message.from_user.id
     try:
         args = " ".join(context.args).split("|")
         customer, item_name, price = args[0].strip(), args[1].strip(), float(args[2].strip())
         conn = get_db()
         cursor = conn.cursor()
-        cursor.execute("SELECT quantity FROM inventory WHERE item_name = ?", (item_name,))
+        cursor.execute("SELECT quantity FROM inventory WHERE user_id = ? AND item_name = ?", (user_id, item_name))
         row = cursor.fetchone()
         if not row or row[0] < 1:
             await update.message.reply_text("❌ လက်ကျန် Stock မလုံလောက်ပါ။")
             return
-        cursor.execute("UPDATE inventory SET quantity = quantity - 1 WHERE item_name = ?", (item_name,))
-        cursor.execute("INSERT INTO sales (customer_name, item_name, sale_type, total_price, paid_amount, monthly_payment, status, date, gift_item) VALUES (?, ?, 'CASH', ?, ?, 0, 'PAID', ?, '')", (customer, item_name, price, price, datetime.date.today().strftime("%Y-%m-%d")))
+        cursor.execute("UPDATE inventory SET quantity = quantity - 1 WHERE user_id = ? AND item_name = ?", (user_id, item_name))
+        cursor.execute("INSERT INTO sales (user_id, customer_name, item_name, sale_type, total_price, paid_amount, monthly_payment, status, date, gift_item) VALUES (?, ?, ?, 'CASH', ?, ?, 0, 'PAID', ?, '')", (user_id, customer, item_name, price, price, datetime.date.today().strftime("%Y-%m-%d")))
         sale_id = cursor.lastrowid
         conn.commit()
         conn.close()
@@ -266,23 +225,24 @@ async def sell_cash(update: Update, context: ContextTypes.DEFAULT_TYPE):
         await update.message.reply_text("❌ `/sell_cash <ဝယ်သူ> | <ပစ္စည်း> | <ရောင်းဈေး>` ဟုသာ ရိုက်ပါ။")
 
 async def sell_gift(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    user_id = update.message.from_user.id
     try:
         args = " ".join(context.args).split("|")
         customer, item_name, price, gift = args[0].strip(), args[1].strip(), float(args[2].strip()), args[3].strip()
         conn = get_db()
         cursor = conn.cursor()
-        cursor.execute("SELECT quantity FROM inventory WHERE item_name = ?", (item_name,))
+        cursor.execute("SELECT quantity FROM inventory WHERE user_id = ? AND item_name = ?", (user_id, item_name))
         row = cursor.fetchone()
         if not row or row[0] < 1:
             await update.message.reply_text("❌ Stock မလုံလောက်ပါ။")
             return
-        cursor.execute("UPDATE inventory SET quantity = quantity - 1 WHERE item_name = ?", (item_name,))
+        cursor.execute("UPDATE inventory SET quantity = quantity - 1 WHERE user_id = ? AND item_name = ?", (user_id, item_name))
         for g_item in [g.strip() for g in gift.split(',') if g.strip()]:
-            cursor.execute("SELECT quantity FROM inventory WHERE item_name = ?", (g_item,))
+            cursor.execute("SELECT quantity FROM inventory WHERE user_id = ? AND item_name = ?", (user_id, g_item))
             g_row = cursor.fetchone()
             if g_row and g_row[0] > 0:
-                cursor.execute("UPDATE inventory SET quantity = quantity - 1 WHERE item_name = ?", (g_item,))
-        cursor.execute("INSERT INTO sales (customer_name, item_name, sale_type, total_price, paid_amount, monthly_payment, status, date, gift_item) VALUES (?, ?, 'CASH', ?, ?, 0, 'PAID', ?, ?)", (customer, item_name, price, price, datetime.date.today().strftime("%Y-%m-%d"), gift))
+                cursor.execute("UPDATE inventory SET quantity = quantity - 1 WHERE user_id = ? AND item_name = ?", (user_id, g_item))
+        cursor.execute("INSERT INTO sales (user_id, customer_name, item_name, sale_type, total_price, paid_amount, monthly_payment, status, date, gift_item) VALUES (?, ?, ?, 'CASH', ?, ?, 0, 'PAID', ?, ?)", (user_id, customer, item_name, price, price, datetime.date.today().strftime("%Y-%m-%d"), gift))
         sale_id = cursor.lastrowid
         conn.commit()
         conn.close()
@@ -291,19 +251,20 @@ async def sell_gift(update: Update, context: ContextTypes.DEFAULT_TYPE):
         await update.message.reply_text("❌ `/sell_gift <ဝယ်သူ> | <ပစ္စည်း> | <ရောင်းဈေး> | <လက်ဆောင်>`")
 
 async def sell_installment(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    user_id = update.message.from_user.id
     try:
         args = " ".join(context.args).split("|")
         customer, item_name, total_price, down_payment, monthly_pay = args[0].strip(), args[1].strip(), float(args[2].strip()), float(args[3].strip()), float(args[4].strip())
         conn = get_db()
         cursor = conn.cursor()
-        cursor.execute("SELECT quantity FROM inventory WHERE item_name = ?", (item_name,))
+        cursor.execute("SELECT quantity FROM inventory WHERE user_id = ? AND item_name = ?", (user_id, item_name))
         row = cursor.fetchone()
         if not row or row[0] < 1:
             await update.message.reply_text("❌ Stock မလုံလောက်ပါ။")
             return
-        cursor.execute("UPDATE inventory SET quantity = quantity - 1 WHERE item_name = ?", (item_name,))
+        cursor.execute("UPDATE inventory SET quantity = quantity - 1 WHERE user_id = ? AND item_name = ?", (user_id, item_name))
         status = 'PAID' if down_payment >= total_price else 'PENDING'
-        cursor.execute("INSERT INTO sales (customer_name, item_name, sale_type, total_price, paid_amount, monthly_payment, status, date, gift_item) VALUES (?, ?, 'INSTALLMENT', ?, ?, ?, ?, ?, '')", (customer, item_name, total_price, down_payment, monthly_pay, status, datetime.date.today().strftime("%Y-%m-%d")))
+        cursor.execute("INSERT INTO sales (user_id, customer_name, item_name, sale_type, total_price, paid_amount, monthly_payment, status, date, gift_item) VALUES (?, ?, ?, 'INSTALLMENT', ?, ?, ?, ?, ?, '')", (user_id, customer, item_name, total_price, down_payment, monthly_pay, status, datetime.date.today().strftime("%Y-%m-%d")))
         sale_id = cursor.lastrowid
         conn.commit()
         conn.close()
@@ -312,24 +273,25 @@ async def sell_installment(update: Update, context: ContextTypes.DEFAULT_TYPE):
         await update.message.reply_text("❌ `/sell_installment <ဝယ်သူ> | <ပစ္စည်း> | <စုစုပေါင်းဈေး> | <စပေါ်> | <၁လပေး>`")
 
 async def sell_installment_gift(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    user_id = update.message.from_user.id
     try:
         args = " ".join(context.args).split("|")
         customer, item_name, total_price, down_payment, monthly_pay, gift = args[0].strip(), args[1].strip(), float(args[2].strip()), float(args[3].strip()), float(args[4].strip()), args[5].strip()
         conn = get_db()
         cursor = conn.cursor()
-        cursor.execute("SELECT quantity FROM inventory WHERE item_name = ?", (item_name,))
+        cursor.execute("SELECT quantity FROM inventory WHERE user_id = ? AND item_name = ?", (user_id, item_name))
         row = cursor.fetchone()
         if not row or row[0] < 1:
             await update.message.reply_text("❌ Stock မလုံလောက်ပါ။")
             return
-        cursor.execute("UPDATE inventory SET quantity = quantity - 1 WHERE item_name = ?", (item_name,))
+        cursor.execute("UPDATE inventory SET quantity = quantity - 1 WHERE user_id = ? AND item_name = ?", (user_id, item_name))
         for g_item in [g.strip() for g in gift.split(',') if g.strip()]:
-            cursor.execute("SELECT quantity FROM inventory WHERE item_name = ?", (g_item,))
+            cursor.execute("SELECT quantity FROM inventory WHERE user_id = ? AND item_name = ?", (user_id, g_item))
             g_row = cursor.fetchone()
             if g_row and g_row[0] > 0:
-                cursor.execute("UPDATE inventory SET quantity = quantity - 1 WHERE item_name = ?", (g_item,))
+                cursor.execute("UPDATE inventory SET quantity = quantity - 1 WHERE user_id = ? AND item_name = ?", (user_id, g_item))
         status = 'PAID' if down_payment >= total_price else 'PENDING'
-        cursor.execute("INSERT INTO sales (customer_name, item_name, sale_type, total_price, paid_amount, monthly_payment, status, date, gift_item) VALUES (?, ?, 'INSTALLMENT', ?, ?, ?, ?, ?, ?)", (customer, item_name, total_price, down_payment, monthly_pay, status, datetime.date.today().strftime("%Y-%m-%d"), gift))
+        cursor.execute("INSERT INTO sales (user_id, customer_name, item_name, sale_type, total_price, paid_amount, monthly_payment, status, date, gift_item) VALUES (?, ?, ?, 'INSTALLMENT', ?, ?, ?, ?, ?, ?)", (user_id, customer, item_name, total_price, down_payment, monthly_pay, status, datetime.date.today().strftime("%Y-%m-%d"), gift))
         sale_id = cursor.lastrowid
         conn.commit()
         conn.close()
@@ -338,6 +300,7 @@ async def sell_installment_gift(update: Update, context: ContextTypes.DEFAULT_TY
         await update.message.reply_text("❌ `/sell_installment_gift <ဝယ်သူ> | <ပစ္စည်း> | <စုစုပေါင်း> | <စပေါ်> | <၁လပေး> | <လက်ဆောင်>`")
 
 async def pay(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    user_id = update.message.from_user.id
     try:
         raw_input = " ".join(context.args).strip()
         if "|" in raw_input:
@@ -350,11 +313,11 @@ async def pay(update: Update, context: ContextTypes.DEFAULT_TYPE):
         cursor = conn.cursor()
 
         if target_str.isdigit():
-            cursor.execute("SELECT id, customer_name, item_name, total_price, paid_amount FROM sales WHERE id = ? AND status = 'PENDING'", (int(target_str),))
+            cursor.execute("SELECT id, customer_name, item_name, total_price, paid_amount FROM sales WHERE user_id = ? AND id = ? AND status = 'PENDING'", (user_id, int(target_str)))
             rows = cursor.fetchall()
         else:
             norm_target = " ".join(target_str.split()).lower()
-            cursor.execute("SELECT id, customer_name, item_name, total_price, paid_amount FROM sales WHERE status = 'PENDING' AND sale_type = 'INSTALLMENT'")
+            cursor.execute("SELECT id, customer_name, item_name, total_price, paid_amount FROM sales WHERE user_id = ? AND status = 'PENDING' AND sale_type = 'INSTALLMENT'", (user_id,))
             rows = [r for r in cursor.fetchall() if " ".join(r[1].split()).lower() == norm_target]
 
         if not rows:
@@ -371,7 +334,7 @@ async def pay(update: Update, context: ContextTypes.DEFAULT_TYPE):
         new_paid = current_paid + amount
         new_status = 'PAID' if new_paid >= total_price else 'PENDING'
 
-        cursor.execute("UPDATE sales SET paid_amount = ?, status = ? WHERE id = ?", (new_paid, new_status, sale_id))
+        cursor.execute("UPDATE sales SET paid_amount = ?, status = ? WHERE user_id = ? AND id = ?", (new_paid, new_status, user_id, sale_id))
         conn.commit()
         conn.close()
         
@@ -381,6 +344,7 @@ async def pay(update: Update, context: ContextTypes.DEFAULT_TYPE):
         await update.message.reply_text("❌ Format မှားယွင်းနေပါသည်။\n`/pay <ဝယ်သူနာမည် သို့မဟုတ် ID> | <ပေးသည့်ပမာဏ>`")
 
 async def search_customer(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    user_id = update.message.from_user.id
     if not context.args:
         await update.message.reply_text("❌ **Format:**\n`/search <ဝယ်သူအမည်>`\n👇 ဥပမာ - `/search Mg Mg`", parse_mode="Markdown")
         return
@@ -388,7 +352,7 @@ async def search_customer(update: Update, context: ContextTypes.DEFAULT_TYPE):
     search_name = " ".join(context.args).strip()
     conn = get_db()
     cursor = conn.cursor()
-    cursor.execute("SELECT id, item_name, total_price, paid_amount, status, date FROM sales WHERE customer_name LIKE ? ORDER BY date DESC", ('%'+search_name+'%',))
+    cursor.execute("SELECT id, item_name, total_price, paid_amount, status, date FROM sales WHERE user_id = ? AND customer_name LIKE ? ORDER BY date DESC", (user_id, '%'+search_name+'%'))
     rows = cursor.fetchall()
     conn.close()
     
@@ -420,9 +384,10 @@ async def search_customer(update: Update, context: ContextTypes.DEFAULT_TYPE):
         await update.message.reply_text(msg, parse_mode="Markdown")
 
 async def stock(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    user_id = update.message.from_user.id
     conn = get_db()
     cursor = conn.cursor()
-    cursor.execute("SELECT item_name, quantity, cost_price FROM inventory WHERE quantity > 0")
+    cursor.execute("SELECT item_name, quantity, cost_price FROM inventory WHERE user_id = ? AND quantity > 0", (user_id,))
     rows = cursor.fetchall()
     conn.close()
     if not rows:
@@ -439,9 +404,10 @@ async def stock(update: Update, context: ContextTypes.DEFAULT_TYPE):
     await update.message.reply_text(msg, parse_mode="Markdown")
 
 async def list_pending(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    user_id = update.message.from_user.id
     conn = get_db()
     cursor = conn.cursor()
-    cursor.execute("SELECT id, customer_name, item_name, total_price, paid_amount, monthly_payment FROM sales WHERE status = 'PENDING'")
+    cursor.execute("SELECT id, customer_name, item_name, total_price, paid_amount, monthly_payment FROM sales WHERE user_id = ? AND status = 'PENDING'", (user_id,))
     rows = cursor.fetchall()
     conn.close()
     if not rows:
@@ -463,6 +429,7 @@ async def list_pending(update: Update, context: ContextTypes.DEFAULT_TYPE):
         await update.message.reply_text(msg, parse_mode="Markdown")
 
 async def report(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    user_id = update.message.from_user.id
     try:
         args = context.args
         if args:
@@ -478,19 +445,19 @@ async def report(update: Update, context: ContextTypes.DEFAULT_TYPE):
         conn = get_db()
         cursor = conn.cursor()
 
-        cursor.execute(f"SELECT s.total_price, s.paid_amount, COALESCE(i.cost_price, 0) FROM sales s LEFT JOIN inventory i ON s.item_name = i.item_name WHERE strftime('{date_format}', s.date) = ?", (period,))
+        cursor.execute(f"SELECT s.total_price, s.paid_amount, COALESCE(i.cost_price, 0) FROM sales s LEFT JOIN inventory i ON s.item_name = i.item_name AND s.user_id = i.user_id WHERE s.user_id = ? AND strftime('{date_format}', s.date) = ?", (user_id, period))
         sales_rows = cursor.fetchall()
 
-        cursor.execute(f"SELECT SUM(amount) FROM expenses WHERE strftime('{date_format}', date) = ?", (period,))
+        cursor.execute(f"SELECT SUM(amount) FROM expenses WHERE user_id = ? AND strftime('{date_format}', date) = ?", (user_id, period))
         total_expense = cursor.fetchone()[0] or 0.0
 
-        cursor.execute(f"SELECT SUM(amount) FROM capital WHERE strftime('{date_format}', date) = ?", (period,))
+        cursor.execute(f"SELECT SUM(amount) FROM capital WHERE user_id = ? AND strftime('{date_format}', date) = ?", (user_id, period))
         added_capital = cursor.fetchone()[0] or 0.0
 
-        cursor.execute(f"SELECT SUM(total_cost) FROM purchases WHERE strftime('{date_format}', date) = ?", (period,))
+        cursor.execute(f"SELECT SUM(total_cost) FROM purchases WHERE user_id = ? AND strftime('{date_format}', date) = ?", (user_id, period))
         total_purchases = cursor.fetchone()[0] or 0.0
 
-        cursor.execute("SELECT SUM(quantity * cost_price) FROM inventory WHERE quantity > 0")
+        cursor.execute("SELECT SUM(quantity * cost_price) FROM inventory WHERE user_id = ? AND quantity > 0", (user_id,))
         total_stock = cursor.fetchone()[0] or 0.0
         conn.close()
 
@@ -522,16 +489,22 @@ async def report(update: Update, context: ContextTypes.DEFAULT_TYPE):
         await update.message.reply_text(f"❌ Error: {str(e)}")
 
 async def export_excel(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    user_id = update.message.from_user.id
     try:
         conn = get_db()
-        with pd.ExcelWriter("Shop_Data_Export.xlsx", engine='openpyxl') as writer:
-            pd.read_sql_query("SELECT * FROM inventory", conn).to_excel(writer, sheet_name='Inventory', index=False)
-            pd.read_sql_query("SELECT * FROM sales", conn).to_excel(writer, sheet_name='Sales', index=False)
-            pd.read_sql_query("SELECT * FROM expenses", conn).to_excel(writer, sheet_name='Expenses', index=False)
-            pd.read_sql_query("SELECT * FROM capital", conn).to_excel(writer, sheet_name='Capital', index=False)
-            pd.read_sql_query("SELECT * FROM purchases", conn).to_excel(writer, sheet_name='Purchases', index=False)
+        file_path = f"Shop_Data_{user_id}.xlsx"
+        
+        # user_id ကို output ကနေဖယ်ထုတ်ပြီးမှ excel ထုတ်ပေးမည်
+        with pd.ExcelWriter(file_path, engine='openpyxl') as writer:
+            pd.read_sql_query(f"SELECT id, item_name, quantity, cost_price FROM inventory WHERE user_id={user_id}", conn).to_excel(writer, sheet_name='Inventory', index=False)
+            pd.read_sql_query(f"SELECT id, customer_name, item_name, sale_type, total_price, paid_amount, monthly_payment, status, date, gift_item FROM sales WHERE user_id={user_id}", conn).to_excel(writer, sheet_name='Sales', index=False)
+            pd.read_sql_query(f"SELECT id, title, amount, date FROM expenses WHERE user_id={user_id}", conn).to_excel(writer, sheet_name='Expenses', index=False)
+            pd.read_sql_query(f"SELECT id, amount, date FROM capital WHERE user_id={user_id}", conn).to_excel(writer, sheet_name='Capital', index=False)
+            pd.read_sql_query(f"SELECT id, item_name, quantity, total_cost, date FROM purchases WHERE user_id={user_id}", conn).to_excel(writer, sheet_name='Purchases', index=False)
+            
         conn.close()
-        await update.message.reply_document(document=open("Shop_Data_Export.xlsx", 'rb'))
+        await update.message.reply_document(document=open(file_path, 'rb'))
+        os.remove(file_path)
     except Exception as e:
         await update.message.reply_text(f"❌ Excel export Error: {str(e)}")
 
@@ -540,11 +513,7 @@ async def export_excel(update: Update, context: ContextTypes.DEFAULT_TYPE):
 # ====================================================
 async def main_callback_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
     query = update.callback_query
-    
-    if ADMIN_IDS and query.from_user.id not in ADMIN_IDS:
-        await query.answer("⛔ သင်သည် Admin မဟုတ်ပါ။ ဤခလုတ်များကို သုံးခွင့်မရှိပါ။", show_alert=True)
-        return
-        
+    user_id = query.from_user.id
     await query.answer()
     data = query.data
 
@@ -552,7 +521,7 @@ async def main_callback_handler(update: Update, context: ContextTypes.DEFAULT_TY
         conn = get_db()
         cursor = conn.cursor()
         for table in ["inventory", "sales", "expenses", "capital", "purchases"]:
-            cursor.execute(f"DELETE FROM {table}")
+            cursor.execute(f"DELETE FROM {table} WHERE user_id = ?", (user_id,))
         conn.commit()
         conn.close()
         await query.edit_message_text("💥 **စာရင်း အားလုံးကို ဖျက်ပစ်ပြီးပါပြီ!**", parse_mode="Markdown")
@@ -566,7 +535,7 @@ async def main_callback_handler(update: Update, context: ContextTypes.DEFAULT_TY
     elif data == "menu_del_sale":
         conn = get_db()
         cursor = conn.cursor()
-        cursor.execute("SELECT id, customer_name, item_name FROM sales ORDER BY id DESC LIMIT 10")
+        cursor.execute("SELECT id, customer_name, item_name FROM sales WHERE user_id = ? ORDER BY id DESC LIMIT 10", (user_id,))
         rows = cursor.fetchall()
         conn.close()
         if not rows: return await query.edit_message_text("ဖျက်စရာ မရှိပါ။")
@@ -577,7 +546,7 @@ async def main_callback_handler(update: Update, context: ContextTypes.DEFAULT_TY
     elif data == "menu_del_purchase":
         conn = get_db()
         cursor = conn.cursor()
-        cursor.execute("SELECT id, item_name, quantity, total_cost FROM purchases ORDER BY id DESC LIMIT 10")
+        cursor.execute("SELECT id, item_name, quantity, total_cost FROM purchases WHERE user_id = ? ORDER BY id DESC LIMIT 10", (user_id,))
         rows = cursor.fetchall()
         conn.close()
         if not rows: return await query.edit_message_text("ဖျက်စရာ အဝယ်စာရင်း မရှိသေးပါ။")
@@ -588,7 +557,7 @@ async def main_callback_handler(update: Update, context: ContextTypes.DEFAULT_TY
     elif data == "menu_del_expense":
         conn = get_db()
         cursor = conn.cursor()
-        cursor.execute("SELECT id, title, amount FROM expenses ORDER BY id DESC LIMIT 10")
+        cursor.execute("SELECT id, title, amount FROM expenses WHERE user_id = ? ORDER BY id DESC LIMIT 10", (user_id,))
         rows = cursor.fetchall()
         conn.close()
         if not rows: return await query.edit_message_text("ဖျက်စရာ အသုံးစရိတ်စာရင်း မရှိသေးပါ။")
@@ -599,7 +568,7 @@ async def main_callback_handler(update: Update, context: ContextTypes.DEFAULT_TY
     elif data == "menu_del_stock":
         conn = get_db()
         cursor = conn.cursor()
-        cursor.execute("SELECT id, item_name FROM inventory")
+        cursor.execute("SELECT id, item_name FROM inventory WHERE user_id = ?", (user_id,))
         rows = cursor.fetchall()
         conn.close()
         if not rows: return await query.edit_message_text("ဖျက်စရာ Stock ပစ္စည်း မရှိသေးပါ။")
@@ -611,14 +580,14 @@ async def main_callback_handler(update: Update, context: ContextTypes.DEFAULT_TY
         sale_id = data.split("_")[3]
         conn = get_db()
         cursor = conn.cursor()
-        cursor.execute("SELECT item_name, gift_item FROM sales WHERE id = ?", (sale_id,))
+        cursor.execute("SELECT item_name, gift_item FROM sales WHERE user_id = ? AND id = ?", (user_id, sale_id))
         row = cursor.fetchone()
         if row:
-            cursor.execute("DELETE FROM sales WHERE id = ?", (sale_id,))
-            cursor.execute("UPDATE inventory SET quantity = quantity + 1 WHERE item_name = ?", (row[0],))
+            cursor.execute("DELETE FROM sales WHERE user_id = ? AND id = ?", (user_id, sale_id))
+            cursor.execute("UPDATE inventory SET quantity = quantity + 1 WHERE user_id = ? AND item_name = ?", (user_id, row[0]))
             if row[1]:
                 for g in [x.strip() for x in row[1].split(',') if x.strip()]:
-                    cursor.execute("UPDATE inventory SET quantity = quantity + 1 WHERE item_name = ?", (g,))
+                    cursor.execute("UPDATE inventory SET quantity = quantity + 1 WHERE user_id = ? AND item_name = ?", (user_id, g))
             conn.commit()
             await query.edit_message_text("✅ အရောင်းစာရင်း ဖျက်လိုက်ပါပြီ။ Stock သို့ ပစ္စည်းများ ပြန်ပေါင်းထည့်ပေးပါပြီ။")
         else:
@@ -629,11 +598,11 @@ async def main_callback_handler(update: Update, context: ContextTypes.DEFAULT_TY
         pur_id = data.split("_")[3]
         conn = get_db()
         cursor = conn.cursor()
-        cursor.execute("SELECT item_name, quantity FROM purchases WHERE id = ?", (pur_id,))
+        cursor.execute("SELECT item_name, quantity FROM purchases WHERE user_id = ? AND id = ?", (user_id, pur_id))
         row = cursor.fetchone()
         if row:
-            cursor.execute("DELETE FROM purchases WHERE id = ?", (pur_id,))
-            cursor.execute("UPDATE inventory SET quantity = quantity - ? WHERE item_name = ?", (row[1], row[0]))
+            cursor.execute("DELETE FROM purchases WHERE user_id = ? AND id = ?", (user_id, pur_id))
+            cursor.execute("UPDATE inventory SET quantity = quantity - ? WHERE user_id = ? AND item_name = ?", (row[1], user_id, row[0]))
             conn.commit()
             await query.edit_message_text(f"✅ အဝယ်စာရင်း ID: `{pur_id}` ({row[0]} x {row[1]}ခု) ကို ဖျက်လိုက်ပါပြီ။ Stock မှလည်း ပြန်နှုတ်ပေးပါပြီ။", parse_mode="Markdown")
         else:
@@ -644,10 +613,10 @@ async def main_callback_handler(update: Update, context: ContextTypes.DEFAULT_TY
         exp_id = data.split("_")[3]
         conn = get_db()
         cursor = conn.cursor()
-        cursor.execute("SELECT title FROM expenses WHERE id = ?", (exp_id,))
+        cursor.execute("SELECT title FROM expenses WHERE user_id = ? AND id = ?", (user_id, exp_id))
         row = cursor.fetchone()
         if row:
-            cursor.execute("DELETE FROM expenses WHERE id = ?", (exp_id,))
+            cursor.execute("DELETE FROM expenses WHERE user_id = ? AND id = ?", (user_id, exp_id))
             conn.commit()
             await query.edit_message_text(f"✅ အသုံးစရိတ် `{row[0]}` ကို ဖျက်လိုက်ပါပြီ။", parse_mode="Markdown")
         else:
@@ -658,10 +627,10 @@ async def main_callback_handler(update: Update, context: ContextTypes.DEFAULT_TY
         stock_id = data.split("_")[3]
         conn = get_db()
         cursor = conn.cursor()
-        cursor.execute("SELECT item_name FROM inventory WHERE id = ?", (stock_id,))
+        cursor.execute("SELECT item_name FROM inventory WHERE user_id = ? AND id = ?", (user_id, stock_id))
         row = cursor.fetchone()
         if row:
-            cursor.execute("DELETE FROM inventory WHERE id = ?", (stock_id,))
+            cursor.execute("DELETE FROM inventory WHERE user_id = ? AND id = ?", (user_id, stock_id))
             conn.commit()
             await query.edit_message_text(f"✅ Stock ပစ္စည်း `{row[0]}` ကို အပြီးတိုင် ဖျက်လိုက်ပါပြီ။", parse_mode="Markdown")
         else:
@@ -669,15 +638,17 @@ async def main_callback_handler(update: Update, context: ContextTypes.DEFAULT_TY
         conn.close()
 
 async def handle_excel_upload(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    user_id = update.message.from_user.id
     document = update.message.document
     if not document.file_name.endswith('.xlsx'):
         await update.message.reply_text("❌ `.xlsx` Excel File ကိုသာ ပို့ပေးပါ။")
         return
     status_msg = await update.message.reply_text("🔄 Restore လုပ်နေပါသည်...")
     try:
+        temp_path = f"temp_restore_{user_id}.xlsx"
         file = await context.bot.get_file(document.file_id)
-        await file.download_to_drive("temp_restore.xlsx")
-        xls = pd.ExcelFile("temp_restore.xlsx")
+        await file.download_to_drive(temp_path)
+        xls = pd.ExcelFile(temp_path)
         conn = get_db()
         cursor = conn.cursor()
 
@@ -685,28 +656,32 @@ async def handle_excel_upload(update: Update, context: ContextTypes.DEFAULT_TYPE
         for table in tables:
             if table in xls.sheet_names:
                 df = pd.read_excel(xls, sheet_name=table)
-                cursor.execute(f"DELETE FROM {table.lower()}")
+                # သွင်းလိုက်သော data အားလုံးကို မိမိ၏ user_id အဖြစ် သတ်မှတ်မည်
+                df['user_id'] = user_id
+                cursor.execute(f"DELETE FROM {table.lower()} WHERE user_id = ?", (user_id,))
                 df.to_sql(table.lower(), conn, if_exists='append', index=False)
 
         conn.commit()
         conn.close()
-        os.remove("temp_restore.xlsx")
+        os.remove(temp_path)
         await status_msg.edit_text("✅ **Excel File မှ စာရင်းများကို Restore လုပ်ပြီးပါပြီ!**")
     except Exception as e:
         await status_msg.edit_text(f"❌ Error: {str(e)}")
 
 async def handle_button_clicks(update: Update, context: ContextTypes.DEFAULT_TYPE):
     text = update.message.text
+    user_id = update.message.from_user.id
+    
     if text == "📦 ဝယ်ယူမည်":
         await update.message.reply_text("📦 `/buy <ပစ္စည်းအမည်> | <အရေအတွက်> | <ဝယ်ဈေး>`", parse_mode="Markdown")
     elif text == "💸 အသုံးစရိတ်":
         await update.message.reply_text("💸 `/expense <အကြောင်းအရာ> | <ပမာဏ>`", parse_mode="Markdown")
     elif text == "💵 လက်ငင်းရောင်း":
-        await update.message.reply_text(f"{get_available_stock_info()}\n\n💵 `/sell_cash <ဝယ်သူ> | <ပစ္စည်း> | <ရောင်းဈေး>`", parse_mode="Markdown")
+        await update.message.reply_text(f"{get_available_stock_info(user_id)}\n\n💵 `/sell_cash <ဝယ်သူ> | <ပစ္စည်း> | <ရောင်းဈေး>`", parse_mode="Markdown")
     elif text == "⏳ ကြွေးရောင်း":
-        await update.message.reply_text(f"{get_available_stock_info()}\n\n⏳ `/sell_installment <ဝယ်သူ> | <ပစ္စည်း> | <စုစုပေါင်းဈေး> | <စပေါ်ငွေ> | <၁လပေးရမည့်ငွေ>`", parse_mode="Markdown")
+        await update.message.reply_text(f"{get_available_stock_info(user_id)}\n\n⏳ `/sell_installment <ဝယ်သူ> | <ပစ္စည်း> | <စုစုပေါင်းဈေး> | <စပေါ်ငွေ> | <၁လပေးရမည့်ငွေ>`", parse_mode="Markdown")
     elif text == "🎁 လက်ဆောင်ရောင်း":
-        await update.message.reply_text(f"{get_available_stock_info()}\n\n🎁 လက်ငင်း: `/sell_gift <ဝယ်သူ> | <ပစ္စည်း> | <ရောင်းဈေး> | <လက်ဆောင်>`", parse_mode="Markdown")
+        await update.message.reply_text(f"{get_available_stock_info(user_id)}\n\n🎁 လက်ငင်း: `/sell_gift <ဝယ်သူ> | <ပစ္စည်း> | <ရောင်းဈေး> | <လက်ဆောင်>`", parse_mode="Markdown")
     elif text == "🔍 ဝယ်သူရှာရန်":
         await update.message.reply_text("🔍 **ဝယ်သူအမည်ဖြင့် စာရင်းရှာရန်:**\n`/search <ဝယ်သူနာမည်>`\n👇 `/search Mg Mg`", parse_mode="Markdown")
     elif text == "📈 လချုပ်/နှစ်ချုပ်":
@@ -740,10 +715,6 @@ async def handle_button_clicks(update: Update, context: ContextTypes.DEFAULT_TYP
     elif text == "📦 Stock အဟောင်း":
         await update.message.reply_text("📦 `/add_stock <ပစ္စည်းအမည်> | <အရေအတွက်> | <ဝယ်ဈေး>`", parse_mode="Markdown")
 
-async def reject_unauthorized(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    if update.message and update.message.from_user:
-        if update.message.from_user.id not in ADMIN_IDS:
-            await update.message.reply_text("⛔ သင်သည် ဤ Bot ကို အသုံးပြုခွင့် မရှိပါ။ (Admin သီးသန့်သုံးရန် ကန့်သတ်ထားသည်)")
 
 def main():
     threading.Thread(target=run_flask, daemon=True).start()
@@ -751,30 +722,29 @@ def main():
 
     app = ApplicationBuilder().token(BOT_TOKEN).build()
 
-    app.add_handler(CommandHandler("start", start, filters=admin_filter))
-    app.add_handler(CommandHandler("command", show_commands, filters=admin_filter))
-    app.add_handler(CommandHandler("search", search_customer, filters=admin_filter))
-    app.add_handler(CommandHandler("add_balance", add_balance, filters=admin_filter))
-    app.add_handler(CommandHandler("buy", buy, filters=admin_filter))
-    app.add_handler(CommandHandler("expense", add_expense, filters=admin_filter))
-    app.add_handler(CommandHandler("add_stock", add_stock, filters=admin_filter))
-    app.add_handler(CommandHandler("add_credit", add_credit, filters=admin_filter))
-    app.add_handler(CommandHandler("sell_cash", sell_cash, filters=admin_filter))
-    app.add_handler(CommandHandler("sell_gift", sell_gift, filters=admin_filter))
-    app.add_handler(CommandHandler("sell_installment", sell_installment, filters=admin_filter))
-    app.add_handler(CommandHandler("sell_installment_gift", sell_installment_gift, filters=admin_filter))
-    app.add_handler(CommandHandler("pay", pay, filters=admin_filter))
-    app.add_handler(CommandHandler("stock", stock, filters=admin_filter))
-    app.add_handler(CommandHandler("list", list_pending, filters=admin_filter))
-    app.add_handler(CommandHandler("report", report, filters=admin_filter))
-    app.add_handler(CommandHandler("monthly_report", report, filters=admin_filter))
-    app.add_handler(CommandHandler("export", export_excel, filters=admin_filter))
+    # User တိုင်း သုံးခွင့်ပြုရန် Filters များကို ဖယ်ရှားထားသည်
+    app.add_handler(CommandHandler("start", start))
+    app.add_handler(CommandHandler("command", show_commands))
+    app.add_handler(CommandHandler("search", search_customer))
+    app.add_handler(CommandHandler("add_balance", add_balance))
+    app.add_handler(CommandHandler("buy", buy))
+    app.add_handler(CommandHandler("expense", add_expense))
+    app.add_handler(CommandHandler("add_stock", add_stock))
+    app.add_handler(CommandHandler("add_credit", add_credit))
+    app.add_handler(CommandHandler("sell_cash", sell_cash))
+    app.add_handler(CommandHandler("sell_gift", sell_gift))
+    app.add_handler(CommandHandler("sell_installment", sell_installment))
+    app.add_handler(CommandHandler("sell_installment_gift", sell_installment_gift))
+    app.add_handler(CommandHandler("pay", pay))
+    app.add_handler(CommandHandler("stock", stock))
+    app.add_handler(CommandHandler("list", list_pending))
+    app.add_handler(CommandHandler("report", report))
+    app.add_handler(CommandHandler("monthly_report", report))
+    app.add_handler(CommandHandler("export", export_excel))
 
     app.add_handler(CallbackQueryHandler(main_callback_handler))
-    app.add_handler(MessageHandler(filters.Document.MimeType("application/vnd.openxmlformats-officedocument.spreadsheetml.sheet") & admin_filter, handle_excel_upload))
-    app.add_handler(MessageHandler(filters.TEXT & ~filters.COMMAND & admin_filter, handle_button_clicks))
-
-    app.add_handler(MessageHandler(~admin_filter & (filters.TEXT | filters.COMMAND | filters.Document.ALL), reject_unauthorized))
+    app.add_handler(MessageHandler(filters.Document.MimeType("application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"), handle_excel_upload))
+    app.add_handler(MessageHandler(filters.TEXT & ~filters.COMMAND, handle_button_clicks))
 
     print("Bot is running...")
     app.run_polling()
