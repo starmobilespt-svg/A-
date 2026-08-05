@@ -21,15 +21,16 @@ BOT_TOKEN = "8939067464:AAFwfWTwtzJGlCS-Vh3aUlt55NRS2tgY4wg"
 DB_FILE = "shop_management.db"
 
 # ====================================================
-# 🛡️ ADMIN လုံခြုံရေး စနစ် (Security Configuration)
+# 🛡️ STRICT ADMIN SECURITY SYSTEM (Admin များစာရင်း)
 # ====================================================
-ADMIN_IDS = [8668319365] 
+ADMIN_IDS = [8668319365, 8366104238] 
 
 class AdminFilter(filters.BaseFilter):
-    def filter(self, message):
-        if not ADMIN_IDS:
-            return True
-        return message.from_user.id in ADMIN_IDS
+    def filter(self, update: Update) -> bool:
+        user = update.effective_user
+        if not user:
+            return False
+        return user.id in ADMIN_IDS
 
 admin_filter = AdminFilter()
 
@@ -47,7 +48,6 @@ def run_flask():
     web_app.run(host='0.0.0.0', port=port)
 
 def send_auto_backup():
-    """Admin ဆီသို့ ၆ နာရီတစ်ကြိမ် Auto Excel Backup ပို့ပေးမည့် လုပ်ဆောင်ချက်"""
     try:
         conn = get_db()
         df_inventory = pd.read_sql_query("SELECT * FROM inventory", conn)
@@ -78,7 +78,7 @@ def send_auto_backup():
 def auto_ping():
     last_backup = time.time()
     while True:
-        time.sleep(14 * 60) # ၁၄ မိနစ်တိုင်း Auto Ping မည်
+        time.sleep(14 * 60)
         render_url = os.environ.get("RENDER_EXTERNAL_URL")
         if render_url:
             try:
@@ -86,7 +86,6 @@ def auto_ping():
             except Exception:
                 pass
         
-        # ၆ နာရီပြည့်တိုင်း Auto Backup ပို့မည်
         if time.time() - last_backup > 6 * 3600:
             if ADMIN_IDS:
                 send_auto_backup()
@@ -139,7 +138,7 @@ def get_main_keyboard():
 # 🚀 Commands & Handlers
 # ====================================================
 async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    await update.message.reply_text("မင်္ဂလာပါ! စာရင်းကိုင် Bot မှ ကြိုဆိုပါသည်။\nအောက်ပါ ခလုတ်များကို နှိပ်၍ အသုံးပြုနိုင်ပါသည်။", reply_markup=get_main_keyboard())
+    await update.message.reply_text("မင်္ဂလာပါ Admin! စာရင်းကိုင် Bot မှ ကြိုဆိုပါသည်။", reply_markup=get_main_keyboard())
 
 async def show_commands(update: Update, context: ContextTypes.DEFAULT_TYPE):
     msg = (
@@ -381,9 +380,6 @@ async def pay(update: Update, context: ContextTypes.DEFAULT_TYPE):
     except Exception:
         await update.message.reply_text("❌ Format မှားယွင်းနေပါသည်။\n`/pay <ဝယ်သူနာမည် သို့မဟုတ် ID> | <ပေးသည့်ပမာဏ>`")
 
-# ====================================================
-# 🔍 ဝယ်သူနာမည်ဖြင့် ရှာဖွေသည့် စနစ် (Search Feature)
-# ====================================================
 async def search_customer(update: Update, context: ContextTypes.DEFAULT_TYPE):
     if not context.args:
         await update.message.reply_text("❌ **Format:**\n`/search <ဝယ်သူအမည်>`\n👇 ဥပမာ - `/search Mg Mg`", parse_mode="Markdown")
@@ -744,6 +740,11 @@ async def handle_button_clicks(update: Update, context: ContextTypes.DEFAULT_TYP
     elif text == "📦 Stock အဟောင်း":
         await update.message.reply_text("📦 `/add_stock <ပစ္စည်းအမည်> | <အရေအတွက်> | <ဝယ်ဈေး>`", parse_mode="Markdown")
 
+async def reject_unauthorized(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    if update.message and update.message.from_user:
+        if update.message.from_user.id not in ADMIN_IDS:
+            await update.message.reply_text("⛔ သင်သည် ဤ Bot ကို အသုံးပြုခွင့် မရှိပါ။ (Admin သီးသန့်သုံးရန် ကန့်သတ်ထားသည်)")
+
 def main():
     threading.Thread(target=run_flask, daemon=True).start()
     threading.Thread(target=auto_ping, daemon=True).start()
@@ -772,6 +773,8 @@ def main():
     app.add_handler(CallbackQueryHandler(main_callback_handler))
     app.add_handler(MessageHandler(filters.Document.MimeType("application/vnd.openxmlformats-officedocument.spreadsheetml.sheet") & admin_filter, handle_excel_upload))
     app.add_handler(MessageHandler(filters.TEXT & ~filters.COMMAND & admin_filter, handle_button_clicks))
+
+    app.add_handler(MessageHandler(~admin_filter & (filters.TEXT | filters.COMMAND | filters.Document.ALL), reject_unauthorized))
 
     print("Bot is running...")
     app.run_polling()
