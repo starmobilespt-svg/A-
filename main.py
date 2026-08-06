@@ -376,6 +376,18 @@ async def pay(update: Update, context: ContextTypes.DEFAULT_TYPE):
             return await update.message.reply_text(msg, parse_mode="Markdown")
 
         sale_id, customer_name, item_name, total_price, current_paid = rows[0]
+        
+        # ⚠️ ကျန်ငွေထက် ပိုထည့်မိခြင်း ရှိ/မရှိ စစ်ဆေးသည့် အပိုင်း
+        remaining_debt = total_price - current_paid
+        if amount > remaining_debt:
+            conn.close()
+            return await update.message.reply_text(
+                f"❌ **ပေးသွင်းငွေ မှားယွင်းနေပါသည်။**\n"
+                f"ယခုစာရင်းအတွက် ပေးရန်ကျန်ငွေမှာ `{remaining_debt:,.0f}` MMK သာဖြစ်ပါသည်။\n\n"
+                f"👉 ကျေးဇူးပြု၍ `{remaining_debt:,.0f}` သို့မဟုတ် ထိုထက်နည်းသော ပမာဏကိုသာ ထည့်သွင်းပါ။", 
+                parse_mode="Markdown"
+            )
+
         new_paid = current_paid + amount
         new_status = 'PAID' if new_paid >= total_price else 'PENDING'
         
