@@ -58,8 +58,13 @@ def init_db():
     
     cursor.execute("PRAGMA table_info(sales)")
     columns = [column[1] for column in cursor.fetchall()]
+    
     if 'gift_item' not in columns:
         cursor.execute("ALTER TABLE sales ADD COLUMN gift_item TEXT DEFAULT ''")
+        
+    # နောက်ဆုံးငွေဆပ်ရက် သိမ်းရန် Column အသစ်ထည့်ခြင်း
+    if 'last_payment_date' not in columns:
+        cursor.execute("ALTER TABLE sales ADD COLUMN last_payment_date TEXT DEFAULT ''")
 
     cursor.execute('''CREATE TABLE IF NOT EXISTS expenses (id INTEGER PRIMARY KEY AUTOINCREMENT, user_id INTEGER, title TEXT, amount REAL, date TEXT)''')
     cursor.execute('''CREATE TABLE IF NOT EXISTS capital (id INTEGER PRIMARY KEY AUTOINCREMENT, user_id INTEGER, amount REAL, date TEXT)''')
@@ -373,13 +378,17 @@ async def pay(update: Update, context: ContextTypes.DEFAULT_TYPE):
         sale_id, customer_name, item_name, total_price, current_paid = rows[0]
         new_paid = current_paid + amount
         new_status = 'PAID' if new_paid >= total_price else 'PENDING'
+        
+        # ယနေ့ ရက်စွဲကို ယူခြင်း
+        today = datetime.now(MM_TZ).strftime("%Y-%m-%d")
 
-        cursor.execute("UPDATE sales SET paid_amount = ?, status = ? WHERE user_id = ? AND id = ?", (new_paid, new_status, user_id, sale_id))
+        # last_payment_date ကိုပါ တစ်ခါတည်း Update လုပ်ခြင်း
+        cursor.execute("UPDATE sales SET paid_amount = ?, status = ?, last_payment_date = ? WHERE user_id = ? AND id = ?", (new_paid, new_status, today, user_id, sale_id))
         conn.commit()
         conn.close()
         
         rem = total_price - new_paid
-        await update.message.reply_text(f"💰 **ငွေဆပ်မှု အောင်မြင်ပါသည်။**\n🆔 ID: `{sale_id}`\n👤 ဝယ်သူ: `{customer_name}`\n💵 ပေးသွင်းငွေ: `{amount:,.0f}` MMK\n📉 ပေးရန်ကျန်ငွေ: `{0 if rem <= 0 else f'{rem:,.0f}'} MMK`", parse_mode="Markdown")
+        await update.message.reply_text(f"💰 **ငွေဆပ်မှု အောင်မြင်ပါသည်။**\n🆔 ID: `{sale_id}`\n👤 ဝယ်သူ: `{customer_name}`\n💵 ပေးသွင်းငွေ: `{amount:,.0f}` MMK\n📉 ပေးရန်ကျန်ငွေ: `{0 if rem <= 0 else f'{rem:,.0f}'} MMK`\n📅 ဆပ်သည့်ရက်စွဲ: `{today}`", parse_mode="Markdown")
     except Exception:
         await update.message.reply_text("❌ Format မှားယွင်းနေပါသည်။\n`/pay <ဝယ်သူနာမည် သို့မဟုတ် ID> | <ပေးသည့်ပမာဏ>`")
 
@@ -409,7 +418,7 @@ async def search_customer(update: Update, context: ContextTypes.DEFAULT_TYPE):
         if status == 'PENDING': total_debt += rem
         
         status_icon = "🔴 အကြွေး" if status == 'PENDING' else "🟢 ရှင်းပြီး"
-        msg += f"🆔 ID: `{sale_id}` | 📅 {date}\n📦 ပစ္စည်း: `{item_name}`\n💰 တန်ဖိုး: `{total_price:,.0f}` | ကျန်ငွေ: `{rem:,.0f}` ({status_icon})\n\n"
+        msg += f"🆔 ID: `{sale_id}` | 📅 စရောင်းရက်: {date}\n📦 ပစ္စည်း: `{item_name}`\n💰 တန်ဖိုး: `{total_price:,.0f}` | ကျန်ငွေ: `{rem:,.0f}` ({status_icon})\n\n"
     
     msg += "───────────────────\n"
     msg += f"🛒 စုစုပေါင်း ဝယ်ယူမှု: `{total_bought:,.0f}` MMK\n"
@@ -465,7 +474,8 @@ async def send_stock_page(update, context, user_id, page=0, is_callback=False):
 async def send_list_page(update, context, user_id, page=0, is_callback=False):
     conn = get_db()
     cursor = conn.cursor()
-    cursor.execute("SELECT id, customer_name, item_name, total_price, paid_amount, monthly_payment FROM sales WHERE user_id = ? AND status = 'PENDING'", (user_id,))
+    # date (စရောင်းသည့်ရက်) ကိုပါ SELECT လုပ်၍ ဆွဲထုတ်ခြင်း
+    cursor.execute("SELECT id, customer_name, item_name, total_price, paid_amount, monthly_payment, last_payment_date, date FROM sales WHERE user_id = ? AND status = 'PENDING'", (user_id,))
     rows = cursor.fetchall()
     conn.close()
 
@@ -487,7 +497,11 @@ async def send_list_page(update, context, user_id, page=0, is_callback=False):
     for r in page_rows:
         rem = r[3] - r[4]
         monthly_pay = r[5] if r[5] is not None else 0.0
-        msg += f"ID: {r[0]} | နာမည်: `{r[1]}` | ပစ္စည်း: {r[2]} | ကျန်ငွေ: {rem:,.0f} | ၁လပေး: {monthly_pay:,.0f}\n\n"
+        
+        last_pay_date = r[6] if len(r) > 6 and r[6] else "မဆပ်ရသေးပါ"
+        sale_date = r[7] if len(r) > 7 and r[7] else "မသိရပါ"
+        
+        msg += f"ID: {r[0]} | နာမည်: `{r[1]}` | ပစ္စည်း: {r[2]} | ကျန်ငွေ: {rem:,.0f} | ၁လပေး: {monthly_pay:,.0f}\n🛒 စရောင်းရက်: {sale_date} | 📅 နောက်ဆုံးဆပ်ရက်: {last_pay_date}\n\n"
     
     msg += "───────────────────\n"
     msg += f"💰 **စုစုပေါင်း ရရန်ရှိသော ကြွေးကျန်ငွေ:** `{total_pending_amount:,.0f}` MMK\n"
@@ -620,14 +634,32 @@ async def export_excel(update: Update, context: ContextTypes.DEFAULT_TYPE):
         
         with pd.ExcelWriter(file_path, engine='openpyxl') as writer:
             df_summary.to_excel(writer, sheet_name='Summary (စာရင်းချုပ်)', index=False)
+            
             pd.read_sql_query(f"SELECT id, item_name, quantity, cost_price FROM inventory WHERE user_id={user_id}", conn).to_excel(writer, sheet_name='Inventory', index=False)
-            pd.read_sql_query(f"SELECT id, customer_name, item_name, sale_type, total_price, paid_amount, monthly_payment, status, date, gift_item FROM sales WHERE user_id={user_id}", conn).to_excel(writer, sheet_name='Sales', index=False)
+            
+            # Excel ထဲတွင် Sales Column များကို ရှင်းလင်းစွာ အမည်ပေးခြင်း
+            df_sales = pd.read_sql_query(f"SELECT id, customer_name, item_name, sale_type, total_price, paid_amount, monthly_payment, status, date as sale_date, gift_item, last_payment_date FROM sales WHERE user_id={user_id}", conn)
+            df_sales.rename(columns={
+                'id': 'ID',
+                'customer_name': 'ဝယ်သူအမည်',
+                'item_name': 'ပစ္စည်း',
+                'sale_type': 'အရောင်းအမျိုးအစား',
+                'total_price': 'စုစုပေါင်းတန်ဖိုး',
+                'paid_amount': 'ပေးသွင်းပြီးငွေ',
+                'monthly_payment': 'တစ်လပေးသွင်းငွေ',
+                'status': 'အခြေအနေ',
+                'sale_date': 'စရောင်းသည့်ရက်',
+                'gift_item': 'လက်ဆောင်',
+                'last_payment_date': 'နောက်ဆုံးငွေဆပ်ရက်'
+            }, inplace=True)
+            df_sales.to_excel(writer, sheet_name='Sales', index=False)
+            
             pd.read_sql_query(f"SELECT id, title, amount, date FROM expenses WHERE user_id={user_id}", conn).to_excel(writer, sheet_name='Expenses', index=False)
             pd.read_sql_query(f"SELECT id, amount, date FROM capital WHERE user_id={user_id}", conn).to_excel(writer, sheet_name='Capital', index=False)
             pd.read_sql_query(f"SELECT id, item_name, quantity, total_cost, date FROM purchases WHERE user_id={user_id}", conn).to_excel(writer, sheet_name='Purchases', index=False)
             
         conn.close()
-        await update.message.reply_document(document=open(file_path, 'rb'), caption="📊 သင့်စာရင်းများနှင့် နောက်ဆုံးငွေလက်ကျန် အချုပ်ပါဝင်သော Excel ဖိုင်ဖြစ်ပါသည်။ ('Summary' Sheet တွင် ဖွင့်ကြည့်ပါ။)")
+        await update.message.reply_document(document=open(file_path, 'rb'), caption="📊 သင့်စာရင်းများနှင့် နောက်ဆုံးငွေလက်ကျန် အချုပ်ပါဝင်သော Excel ဖိုင်ဖြစ်ပါသည်။ ('Sales' Sheet တွင် စရောင်းရက်နှင့် နောက်ဆုံးဆပ်ရက်များကို ကြည့်ရှုနိုင်ပါသည်။)")
         os.remove(file_path)
     except Exception as e:
         await update.message.reply_text(f"❌ Excel export Error: {str(e)}")
