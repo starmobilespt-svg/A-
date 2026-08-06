@@ -105,7 +105,7 @@ async def show_commands(update: Update, context: ContextTypes.DEFAULT_TYPE):
         "🛍️ **အသုံးပြုနိုင်သော Command များ:**\n\n"
         "📦 **၁။ ပစ္စည်းဝယ်ယူခြင်း:**\n`/buy iPhone 13 | 2 | 1200000`\n\n"
         "💵 **၂။ ရောင်းချခြင်း:**\n`/sell_cash AungAung | iPhone 13 | 1500000`\n`/sell_installment MgMg | Phone | 1500000 | 300000 | 100000`\n\n"
-        "💰 **၃။ ငွေဆပ်ခြင်း / အသုံးစရိတ်:**\n`/pay 10 | 100000`\n`/expense မီးဖိုး | 50000`\n\n"
+        "💰 **၃။ ငွေဆပ်ခြင်း / ငွေသွင်းမှားပါက ပြန်နှုတ်ခြင်း:**\n`/pay 10 | 100000`\n`/undo_pay 10 | 50000` (သွင်းတာမှားရင်ပြန်နှုတ်ရန်)\n\n"
         "🔍 **၄။ ဝယ်သူအမည်ဖြင့် ရှာရန်:**\n`/search Mg Mg`\n\n"
         "⏳ **၅။ ယခင်စာရင်းဟောင်းများ:**\n`/add_stock iPhone | 5 | 800000`\n`/add_credit U Ba | Phone | 500000 | 100000`\n\n"
         "📊 **၆။ စာရင်းများ စစ်ဆေးခြင်း:**\n`/stock`, `/list`, `/report`"
@@ -403,6 +403,65 @@ async def pay(update: Update, context: ContextTypes.DEFAULT_TYPE):
         await update.message.reply_text(f"💰 **ငွေဆပ်မှု အောင်မြင်ပါသည်။**\n🆔 ID: `{sale_id}`\n👤 ဝယ်သူ: `{customer_name}`\n💵 ပေးသွင်းငွေ: `{amount:,.0f}` MMK\n📉 ပေးရန်ကျန်ငွေ: `{0 if rem <= 0 else f'{rem:,.0f}'} MMK`\n📅 ဆပ်သည့်ရက်စွဲ: `{today}`", parse_mode="Markdown")
     except Exception:
         await update.message.reply_text("❌ Format မှားယွင်းနေပါသည်။\n`/pay <ဝယ်သူနာမည် သို့မဟုတ် ID> | <ပေးသည့်ပမာဏ>`")
+
+# ====================================================
+# ⏪ ငွေသွင်းမှားပါက ပြန်နှုတ်မည့် Function (အသစ်)
+# ====================================================
+async def undo_pay(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    user_id = update.message.from_user.id
+    try:
+        raw_input = " ".join(context.args).strip()
+        if "|" in raw_input:
+            target_str, amount_str = [p.strip() for p in raw_input.split("|")]
+        else:
+            target_str, amount_str = [p.strip() for p in raw_input.rsplit(" ", 1)]
+        
+        amount = float(amount_str)
+        if amount < 0:
+            return await update.message.reply_text("❌ ငွေပမာဏသည် အပေါင်းလက္ခဏာသာ ဖြစ်ရပါမည်။")
+
+        conn = get_db()
+        cursor = conn.cursor()
+
+        if target_str.isdigit():
+            # အကြွေးဆပ်ပြီးသားစာရင်း (PAID) ကနေလည်း ပြန်နှုတ်ခွင့်ပေးထားပါသည် (မှားဆပ်မိရင် PENDING ပြန်ဖြစ်သွားပါမည်)
+            cursor.execute("SELECT id, customer_name, item_name, total_price, paid_amount FROM sales WHERE user_id = ? AND id = ?", (user_id, int(target_str)))
+            rows = cursor.fetchall()
+        else:
+            norm_target = " ".join(target_str.split()).lower()
+            cursor.execute("SELECT id, customer_name, item_name, total_price, paid_amount FROM sales WHERE user_id = ? AND sale_type = 'INSTALLMENT'", (user_id,))
+            rows = [r for r in cursor.fetchall() if " ".join(r[1].split()).lower() == norm_target]
+
+        if not rows:
+            return await update.message.reply_text(f"❌ `{target_str}` အတွက် စာရင်း မတွေ့ပါ။", parse_mode="Markdown")
+
+        if len(rows) > 1:
+            msg = f"⚠️ **စာရင်း ({len(rows)}) ခု ရှိနေပါသည်:**\n\n"
+            for r in rows: msg += f"🆔 ID: `{r[0]}` | {r[1]} ({r[2]}) - သွင်းပြီးငွေ: `{r[4]:,.0f}`\n👉 `/undo_pay {r[0]} | {amount:,.0f}`\n\n"
+            return await update.message.reply_text(msg, parse_mode="Markdown")
+
+        sale_id, customer_name, item_name, total_price, current_paid = rows[0]
+        
+        if amount > current_paid:
+            conn.close()
+            return await update.message.reply_text(
+                f"❌ **ပြန်နှုတ်မည့်ငွေ မှားယွင်းနေပါသည်။**\n"
+                f"ယခုစာရင်းတွင် ပေးသွင်းထားသောငွေမှာ စုစုပေါင်း `{current_paid:,.0f}` MMK သာရှိပါသည်။\n"
+                f"👉 ကျေးဇူးပြု၍ `{current_paid:,.0f}` ထက်မပိုသော ပမာဏကိုသာ ပြန်နှုတ်ပါ။", 
+                parse_mode="Markdown"
+            )
+
+        new_paid = current_paid - amount
+        new_status = 'PAID' if new_paid >= total_price else 'PENDING'
+        
+        cursor.execute("UPDATE sales SET paid_amount = ?, status = ? WHERE user_id = ? AND id = ?", (new_paid, new_status, user_id, sale_id))
+        conn.commit()
+        conn.close()
+        
+        rem = total_price - new_paid
+        await update.message.reply_text(f"✅ **ငွေသွင်းမှားယွင်းမှု ပြန်လည်ပြင်ဆင်ပြီးပါပြီ။**\n🆔 ID: `{sale_id}`\n👤 ဝယ်သူ: `{customer_name}`\n⏪ ပြန်နှုတ်လိုက်သည့်ငွေ: `{amount:,.0f}` MMK\n📉 ယခုပေးရန်ကျန်ငွေ: `{rem:,.0f} MMK`", parse_mode="Markdown")
+    except Exception:
+        await update.message.reply_text("❌ Format မှားယွင်းနေပါသည်။\n`/undo_pay <ဝယ်သူနာမည် သို့မဟုတ် ID> | <ပြန်နှုတ်မည့်ပမာဏ>`\nဥပမာ - `/undo_pay 10 | 50000`")
 
 async def search_customer(update: Update, context: ContextTypes.DEFAULT_TYPE):
     user_id = update.message.from_user.id
@@ -705,6 +764,10 @@ async def main_callback_handler(update: Update, context: ContextTypes.DEFAULT_TY
     elif data == "guide_edit":
         await query.edit_message_text("✏️ **စာရင်းပြင်ရန်:**\n၁။ မှားယွင်းသော စာရင်းကို အရင်ဖျက်ပါ။ ပြီးမှ အသစ်ပြန်သွင်းပါ။\n၂။ သို့မဟုတ် Excel Backup ယူပြီး ပြင်ဆင်ကာ Bot ထဲသို့ File အဖြစ် ပြန်ပို့ပါ။", parse_mode="Markdown")
     
+    # ငွေသွင်းမှားတာ ပြန်ပြင်ရန် လမ်းညွှန် (အသစ်)
+    elif data == "guide_undo_pay":
+        await query.edit_message_text("⏪ **ငွေသွင်းမှားတာ ပြန်နှုတ်ရန်:**\n`/undo_pay <ID သို့မဟုတ် အမည်> | <ပြန်နှုတ်မည့်ပမာဏ>` ဟု ရိုက်ထည့်ပါ။\n\n👇 ဥပမာ - (ID 10 ကို ၄သောင်း ပြန်နှုတ်လိုလျှင်)\n`/undo_pay 10 | 40000`", parse_mode="Markdown")
+    
     # ဖျက်မည့် Menu များကို ပြသပေးသော အပိုင်း
     elif data == "menu_del_sale":
         conn = get_db()
@@ -868,6 +931,7 @@ async def handle_button_clicks(update: Update, context: ContextTypes.DEFAULT_TYP
             [InlineKeyboardButton("🛒 အဝယ်စာရင်း ဖျက်မည်", callback_data="menu_del_purchase")],
             [InlineKeyboardButton("💸 အသုံးစရိတ် ဖျက်မည်", callback_data="menu_del_expense")],
             [InlineKeyboardButton("📦 Stock ပစ္စည်း ဖျက်မည်", callback_data="menu_del_stock")],
+            [InlineKeyboardButton("⏪ ငွေသွင်းမှားတာ ပြန်နှုတ်မည်", callback_data="guide_undo_pay")],
             [InlineKeyboardButton("✏️ စာရင်းပြင်ရန် လမ်းညွှန်", callback_data="guide_edit")],
             [InlineKeyboardButton("💥 စာရင်းအားလုံး ဖျက်မည်", callback_data="confirm_reset_all")]
         ]
@@ -903,6 +967,10 @@ def main():
     app.add_handler(CommandHandler("sell_installment", sell_installment))
     app.add_handler(CommandHandler("sell_installment_gift", sell_installment_gift))
     app.add_handler(CommandHandler("pay", pay))
+    
+    # ပြန်နှုတ်ရန် (Undo Pay) Command အသစ်ကို ဤနေရာတွင် ထည့်ထားပါသည်
+    app.add_handler(CommandHandler("undo_pay", undo_pay))
+    
     app.add_handler(CommandHandler("stock", stock))
     app.add_handler(CommandHandler("list", list_pending))
     app.add_handler(CommandHandler("report", report))
