@@ -17,7 +17,7 @@ from telegram.ext import (
 )
 
 # Configuration
-BOT_TOKEN = "8939067464:AAFwfWTwtzJGlCS-Vh3aUlt55NRS2tgY4wg"
+BOT_TOKEN = "8939067464:AAHVrArTZKEt5nwRlhvyhgRPNIRuzRjR2gA"
 DB_FILE = "shop_management.db"
 
 # 🇲🇲 မြန်မာစံတော်ချိန် (UTC +6:30) သတ်မှတ်ခြင်း
