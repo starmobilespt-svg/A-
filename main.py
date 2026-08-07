@@ -66,6 +66,13 @@ def init_db():
         cursor.execute("ALTER TABLE sales ADD COLUMN last_payment_date TEXT DEFAULT ''")
 
     cursor.execute('''CREATE TABLE IF NOT EXISTS expenses (id INTEGER PRIMARY KEY AUTOINCREMENT, user_id INTEGER, title TEXT, amount REAL, date TEXT)''')
+    
+    # ⚠️ အသုံးစရိတ်တွင် Category (အမျိုးအစား) အသစ်ထည့်ခြင်း
+    cursor.execute("PRAGMA table_info(expenses)")
+    exp_columns = [column[1] for column in cursor.fetchall()]
+    if 'category' not in exp_columns:
+        cursor.execute("ALTER TABLE expenses ADD COLUMN category TEXT DEFAULT 'အထွေထွေ'")
+
     cursor.execute('''CREATE TABLE IF NOT EXISTS capital (id INTEGER PRIMARY KEY AUTOINCREMENT, user_id INTEGER, amount REAL, date TEXT)''')
     cursor.execute('''CREATE TABLE IF NOT EXISTS purchases (id INTEGER PRIMARY KEY AUTOINCREMENT, user_id INTEGER, item_name TEXT, quantity INTEGER, total_cost REAL, date TEXT)''')
 
@@ -84,10 +91,10 @@ def get_main_keyboard():
     keyboard = [
         [KeyboardButton("📦 ဝယ်ယူမည်"), KeyboardButton("💸 အသုံးစရိတ်")],
         [KeyboardButton("💵 လက်ငင်းရောင်း"), KeyboardButton("⏳ ကြွေးရောင်း")],
-        [KeyboardButton("🔍 ဝယ်သူရှာရန်"), KeyboardButton("📊 လက်ကျန် Stock")],
-        [KeyboardButton("⏳ ကြွေးကျန်သူများ"), KeyboardButton("📈 လချုပ်/နှစ်ချုပ်")],
-        [KeyboardButton("💰 ငွေဆပ်မည်"), KeyboardButton("📁 Excel Backup")],
-        [KeyboardButton("📥 Excel Restore"), KeyboardButton("💵 ငွေလက်ကျန်")],
+        [KeyboardButton("📊 လက်ကျန် Stock"), KeyboardButton("⏳ ကြွေးကျန်သူများ")],
+        [KeyboardButton("🔍 ဝယ်သူရှာရန်"), KeyboardButton("💰 ငွေဆပ်မည်")],
+        [KeyboardButton("📁 Excel Backup"), KeyboardButton("📥 Excel Restore")],
+        [KeyboardButton("📈 လချုပ်/နှစ်ချုပ်"), KeyboardButton("💵 ငွေလက်ကျန်")],
         [KeyboardButton("⏳ ကြွေးလက်ကျန်"), KeyboardButton("📦 Stock အဟောင်း")],
         [KeyboardButton("🗑️/✏️ ဖျက်/ပြင်")]
     ]
@@ -103,11 +110,12 @@ async def show_commands(update: Update, context: ContextTypes.DEFAULT_TYPE):
     msg = (
         "🛍️ **အသုံးပြုနိုင်သော Command များ:**\n\n"
         "📦 **၁။ ပစ္စည်းဝယ်ယူခြင်း:**\n`/buy iPhone 13 | 2 | 1200000`\n\n"
-        "💵 **၂။ ရောင်းချခြင်း:**\n`/sell_cash AungAung | iPhone 13 | 1500000` (လက်ဆောင်ပါက အနောက်ဆုံးတွင် `| Cover` ဟု ထပ်ထည့်ပါ)\n`/sell_installment MgMg | Phone | 1500000 | 300000 | 100000` (လက်ဆောင်ပါက အနောက်ဆုံးတွင် `| Cover` ဟု ထပ်ထည့်ပါ)\n\n"
-        "💰 **၃။ ငွေဆပ်ခြင်း / ငွေသွင်းမှားပါက ပြန်နှုတ်ခြင်း:**\n`/pay 10 | 100000`\n`/undo_pay 10 | 50000` (သွင်းတာမှားရင်ပြန်နှုတ်ရန်)\n\n"
-        "🔍 **၄။ ဝယ်သူအမည်ဖြင့် ရှာရန်:**\n`/search Mg Mg`\n\n"
-        "⏳ **၅။ ယခင်စာရင်းဟောင်းများ:**\n`/add_stock iPhone | 5 | 800000`\n`/add_credit U Ba | Phone | 500000 | 100000`\n\n"
-        "📊 **၆။ စာရင်းများ စစ်ဆေးခြင်း:**\n`/stock`, `/list`, `/report`"
+        "💵 **၂။ ရောင်းချခြင်း:**\n`/sell_cash AungAung | iPhone 13 | 1500000`\n`/sell_installment MgMg | Phone | 1500000 | 300000 | 100000`\n\n"
+        "💰 **၃။ ငွေဆပ်ခြင်း / ငွေသွင်းမှားပါက ပြန်နှုတ်ခြင်း:**\n`/pay 10 | 100000`\n`/undo_pay 10 | 50000`\n\n"
+        "💸 **၄။ အသုံးစရိတ်စာရင်း:**\n`/expense မီးလင်းခ | ဇူလိုင်အတွက် | 15000`\n\n"
+        "🔍 **၅။ ဝယ်သူအမည်ဖြင့် ရှာရန်:**\n`/search Mg Mg`\n\n"
+        "⏳ **၆။ ယခင်စာရင်းဟောင်းများ:**\n`/add_stock iPhone | 5 | 800000`\n`/add_credit U Ba | Phone | 500000 | 100000`\n\n"
+        "📊 **၇။ စာရင်းများ စစ်ဆေးခြင်း:**\n`/stock`, `/list`, `/report`"
     )
     await update.message.reply_text(msg, parse_mode="Markdown")
 
@@ -162,8 +170,10 @@ async def buy(update: Update, context: ContextTypes.DEFAULT_TYPE):
             cursor.execute("INSERT INTO inventory (user_id, item_name, quantity, cost_price) VALUES (?, ?, ?, ?)", (user_id, item_name, qty, cost_price))
             
         cursor.execute("INSERT INTO purchases (user_id, item_name, quantity, total_cost, date) VALUES (?, ?, ?, ?, ?)", (user_id, item_name, qty, qty * cost_price, today))
+        
+        # Deli fee ကို အသုံးစရိတ်စာရင်းထဲ Category နှင့်တကွ အလိုအလျောက်သွင်းခြင်း
         if deli_fee > 0:
-            cursor.execute("INSERT INTO expenses (user_id, title, amount, date) VALUES (?, ?, ?, ?)", (user_id, f"{item_name} ဝယ်ယူမှု Delivery ခ", deli_fee, today))
+            cursor.execute("INSERT INTO expenses (user_id, category, title, amount, date) VALUES (?, ?, ?, ?, ?)", (user_id, "ပို့ဆောင်ခ (Deli)", f"{item_name} ဝယ်ယူမှု Delivery", deli_fee, today))
             
         conn.commit()
         conn.close()
@@ -175,19 +185,26 @@ async def add_expense(update: Update, context: ContextTypes.DEFAULT_TYPE):
     user_id = update.message.from_user.id
     try:
         args = " ".join(context.args).split("|")
-        title, amount = args[0].strip(), float(args[1].strip())
+        # Category ပါရင် ၃ ခု၊ မပါရင် ၂ ခု (အထွေထွေ)
+        if len(args) == 3:
+            category, title, amount = args[0].strip(), args[1].strip(), float(args[2].strip())
+        elif len(args) == 2:
+            category, title, amount = "အထွေထွေ", args[0].strip(), float(args[1].strip())
+        else:
+            raise ValueError
+
         if amount < 0:
             return await update.message.reply_text("❌ အသုံးစရိတ်ပမာဏသည် အပေါင်းလက္ခဏာသာ ဖြစ်ရပါမည်။")
 
         today = datetime.now(MM_TZ).strftime("%Y-%m-%d")
         conn = get_db()
         cursor = conn.cursor()
-        cursor.execute("INSERT INTO expenses (user_id, title, amount, date) VALUES (?, ?, ?, ?)", (user_id, title, amount, today))
+        cursor.execute("INSERT INTO expenses (user_id, category, title, amount, date) VALUES (?, ?, ?, ?, ?)", (user_id, category, title, amount, today))
         conn.commit()
         conn.close()
-        await update.message.reply_text(f"💸 **ဆိုင်အသုံးစရိတ် စာရင်းသွင်းပြီးပါပြီ!**\n📝 အကြောင်းအရာ: `{title}`\n💰 ကျသင့်ငွေ: `{amount:,.0f}` MMK", parse_mode="Markdown")
+        await update.message.reply_text(f"💸 **ဆိုင်အသုံးစရိတ် စာရင်းသွင်းပြီးပါပြီ!**\n📂 အမျိုးအစား: `{category}`\n📝 အကြောင်းအရာ: `{title}`\n💰 ကျသင့်ငွေ: `{amount:,.0f}` MMK", parse_mode="Markdown")
     except Exception:
-        await update.message.reply_text("❌ `/expense <အကြောင်းအရာ> | <ပမာဏ>` ဟုသာ ရိုက်ပါ။")
+        await update.message.reply_text("❌ မှားယွင်းနေပါသည်။\nပုံစံ - `/expense <အမျိုးအစား> | <အကြောင်းအရာ> | <ပမာဏ>`\nဥပမာ - `/expense မီးလင်းခ | ဇူလိုင်လအတွက် | 15000`")
 
 async def add_stock(update: Update, context: ContextTypes.DEFAULT_TYPE):
     user_id = update.message.from_user.id
@@ -558,7 +575,7 @@ async def list_pending(update: Update, context: ContextTypes.DEFAULT_TYPE):
     await send_list_page(update, context, update.message.from_user.id, page=0, is_callback=False)
 
 # ====================================================
-# 📊 အရှုံးအမြတ် လချုပ် Report
+# 📊 အရှုံးအမြတ် လချုပ် Report (အသုံးစရိတ် ခွဲခြမ်းစိတ်ဖြာမှု ပါဝင်သည်)
 # ====================================================
 async def report(update: Update, context: ContextTypes.DEFAULT_TYPE):
     user_id = update.message.from_user.id
@@ -581,6 +598,11 @@ async def report(update: Update, context: ContextTypes.DEFAULT_TYPE):
         sales_rows = cursor.fetchall()
         cursor.execute(f"SELECT SUM(amount) FROM expenses WHERE user_id = ? AND strftime('{date_format}', date) = ?", (user_id, period))
         total_expense = cursor.fetchone()[0] or 0.0
+        
+        # 📂 အသုံးစရိတ် ခွဲခြမ်းစိတ်ဖြာရန် ယူခြင်း
+        cursor.execute(f"SELECT category, SUM(amount) FROM expenses WHERE user_id = ? AND strftime('{date_format}', date) = ? GROUP BY category", (user_id, period))
+        expense_breakdown = cursor.fetchall()
+
         cursor.execute(f"SELECT SUM(amount) FROM capital WHERE user_id = ? AND strftime('{date_format}', date) = ?", (user_id, period))
         added_capital = cursor.fetchone()[0] or 0.0
         cursor.execute(f"SELECT SUM(total_cost) FROM purchases WHERE user_id = ? AND strftime('{date_format}', date) = ?", (user_id, period))
@@ -610,6 +632,12 @@ async def report(update: Update, context: ContextTypes.DEFAULT_TYPE):
         current_month_cashflow = added_capital + total_collected - total_expense - total_purchases
         closing_balance = opening_balance + current_month_cashflow
 
+        # Breakdown စာသားတည်ဆောက်ခြင်း
+        exp_breakdown_str = ""
+        if expense_breakdown:
+            exp_breakdown_str = "\n".join([f"   • {r[0]}: `{r[1]:,.0f}`" for r in expense_breakdown])
+            exp_breakdown_str = f"\n📂 **အသုံးစရိတ် အသေးစိတ်:**\n{exp_breakdown_str}\n"
+
         msg = (
             f"📊 **{period_label} အရှုံးအမြတ်နှင့် လက်ကျန် စာရင်း**\n\n"
             f"🏦 **ယခင်လ လက်ကျန်ငွေ (Opening):** `{opening_balance:,.0f}` MMK\n"
@@ -621,7 +649,8 @@ async def report(update: Update, context: ContextTypes.DEFAULT_TYPE):
             "───────────────────\n"
             f"📥 ထည့်သွင်းငွေ/အရင်း: `{added_capital:,.0f}` MMK\n"
             f"📤 အဝယ်စရိတ်: `{total_purchases:,.0f}` MMK\n"
-            f"💸 အသုံးစရိတ်: `{total_expense:,.0f}` MMK\n"
+            f"💸 အသုံးစရိတ် (စုစုပေါင်း): `{total_expense:,.0f}` MMK\n"
+            f"{exp_breakdown_str}"
             "───────────────────\n"
             f"{profit_status} (ယခုလ အသားတင်): `{abs(net_profit):,.0f}` MMK\n"
             f"💰 **စုစုပေါင်း နောက်ဆုံးငွေလက်ကျန်**: `{closing_balance:,.0f}` MMK\n"
@@ -679,7 +708,17 @@ async def export_excel(update: Update, context: ContextTypes.DEFAULT_TYPE):
             }, inplace=True)
             df_sales.to_excel(writer, sheet_name='Sales', index=False)
             
-            pd.read_sql_query(f"SELECT id, title, amount, date FROM expenses WHERE user_id={user_id}", conn).to_excel(writer, sheet_name='Expenses', index=False)
+            # Expenses တွင် Category ပြောင်းလဲမှု
+            df_expenses = pd.read_sql_query(f"SELECT id, category, title, amount, date as expense_date FROM expenses WHERE user_id={user_id}", conn)
+            df_expenses.rename(columns={
+                'id': 'ID',
+                'category': 'အမျိုးအစား',
+                'title': 'အကြောင်းအရာ',
+                'amount': 'ပမာဏ',
+                'expense_date': 'ရက်စွဲ'
+            }, inplace=True)
+            df_expenses.to_excel(writer, sheet_name='Expenses', index=False)
+            
             pd.read_sql_query(f"SELECT id, amount, date FROM capital WHERE user_id={user_id}", conn).to_excel(writer, sheet_name='Capital', index=False)
             pd.read_sql_query(f"SELECT id, item_name, quantity, total_cost, date FROM purchases WHERE user_id={user_id}", conn).to_excel(writer, sheet_name='Purchases', index=False)
             
@@ -744,11 +783,11 @@ async def main_callback_handler(update: Update, context: ContextTypes.DEFAULT_TY
     elif data == "menu_del_expense":
         conn = get_db()
         cursor = conn.cursor()
-        cursor.execute("SELECT id, title, amount FROM expenses WHERE user_id = ? ORDER BY id DESC LIMIT 10", (user_id,))
+        cursor.execute("SELECT id, category, title, amount FROM expenses WHERE user_id = ? ORDER BY id DESC LIMIT 10", (user_id,))
         rows = cursor.fetchall()
         conn.close()
         if not rows: return await query.edit_message_text("ဖျက်စရာ အသုံးစရိတ်စာရင်း မရှိသေးပါ။")
-        keyboard = [[InlineKeyboardButton(f"ID:{r[0]} | {r[1]} - {r[2]:,.0f}", callback_data=f"do_del_exp_{r[0]}")] for r in rows]
+        keyboard = [[InlineKeyboardButton(f"ID:{r[0]} | {r[1]} ({r[2]}) - {r[3]:,.0f}", callback_data=f"do_del_exp_{r[0]}")] for r in rows]
         keyboard.append([InlineKeyboardButton("🔙 နောက်သို့", callback_data="cancel_action")])
         await query.edit_message_text("🗑️ **နောက်ဆုံး အသုံးစရိတ်စာရင်းများ:**", reply_markup=InlineKeyboardMarkup(keyboard), parse_mode="Markdown")
     elif data == "menu_del_stock":
@@ -820,7 +859,6 @@ async def main_callback_handler(update: Update, context: ContextTypes.DEFAULT_TY
             await query.edit_message_text("❌ ပစ္စည်းရှာမတွေ့ပါ။")
         conn.close()
 
-# ⚠️ ဤနေရာတွင် Column အမည်များကို မြန်မာမှ အင်္ဂလိပ်သို့ ပြန်ပြောင်းပေးမည့် Code ထည့်သွင်းထားပါသည်
 async def handle_excel_upload(update: Update, context: ContextTypes.DEFAULT_TYPE):
     user_id = update.message.from_user.id
     document = update.message.document
@@ -841,7 +879,6 @@ async def handle_excel_upload(update: Update, context: ContextTypes.DEFAULT_TYPE
             if table in xls.sheet_names:
                 df = pd.read_excel(xls, sheet_name=table)
                 
-                # 'Sales' Sheet မှ မြန်မာလိုပြောင်းထားသော Column များကို Database နာမည်များအတိုင်း ပြန်ပြောင်းခြင်း
                 if table == 'Sales':
                     reverse_rename = {
                         'ID': 'id',
@@ -856,8 +893,18 @@ async def handle_excel_upload(update: Update, context: ContextTypes.DEFAULT_TYPE
                         'လက်ဆောင်': 'gift_item',
                         'နောက်ဆုံးငွေဆပ်ရက်': 'last_payment_date'
                     }
-                    # ရှိနေသော Column များကိုသာ ပြောင်းလဲရန်
                     df.rename(columns={k: v for k, v in reverse_rename.items() if k in df.columns}, inplace=True)
+                
+                # Expenses တွင်လည်း မြန်မာစာမှ အင်္ဂလိပ်သို့ ပြန်ပြောင်းရန်
+                elif table == 'Expenses':
+                    reverse_rename_exp = {
+                        'ID': 'id',
+                        'အမျိုးအစား': 'category',
+                        'အကြောင်းအရာ': 'title',
+                        'ပမာဏ': 'amount',
+                        'ရက်စွဲ': 'date'
+                    }
+                    df.rename(columns={k: v for k, v in reverse_rename_exp.items() if k in df.columns}, inplace=True)
                 
                 df['user_id'] = user_id
                 cursor.execute(f"DELETE FROM {table.lower()} WHERE user_id = ?", (user_id,))
@@ -877,7 +924,8 @@ async def handle_button_clicks(update: Update, context: ContextTypes.DEFAULT_TYP
     if text == "📦 ဝယ်ယူမည်":
         await update.message.reply_text("📦 `/buy <ပစ္စည်းအမည်> | <အရေအတွက်> | <ဝယ်ဈေး>`", parse_mode="Markdown")
     elif text == "💸 အသုံးစရိတ်":
-        await update.message.reply_text("💸 `/expense <အကြောင်းအရာ> | <ပမာဏ>`", parse_mode="Markdown")
+        # ⚠️ အသုံးစရိတ် အမျိုးအစား ခွဲခြားရန် Command အသစ် လမ်းညွှန်
+        await update.message.reply_text("💸 `/expense <အမျိုးအစား> | <အကြောင်းအရာ> | <ပမာဏ>`\n\n👇 ဥပမာ\n`/expense မီးလင်းခ | ဇူလိုင်လအတွက် | 15000`\n`/expense Delivery | ပစ္စည်းပို့ခ | 3000`", parse_mode="Markdown")
     elif text == "💵 လက်ငင်းရောင်း":
         await update.message.reply_text(f"{get_available_stock_info(user_id)}\n\n💵 `/sell_cash <ဝယ်သူ> | <ပစ္စည်း> | <ရောင်းဈေး> | <လက်ဆောင် (Optional)>`\n(လက်ဆောင်ပေးရန်မရှိပါက နောက်ဆုံးက လက်ဆောင်ကို ချန်လှပ်ထားခဲ့ပါ)", parse_mode="Markdown")
     elif text == "⏳ ကြွေးရောင်း":
