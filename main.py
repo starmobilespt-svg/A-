@@ -154,7 +154,6 @@ async def buy(update: Update, context: ContextTypes.DEFAULT_TYPE):
         qty = int(args[1].strip())
         cost_price = float(args[2].strip())
         
-        # Delivery ခ ပါ/မပါ စစ်ဆေးခြင်း
         deli_fee = float(args[3].strip()) if len(args) == 4 else 0.0
         
         if qty <= 0 or cost_price < 0 or deli_fee < 0:
@@ -619,6 +618,11 @@ async def report(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
         cursor.execute("SELECT SUM(quantity * cost_price) FROM inventory WHERE user_id = ? AND quantity > 0", (user_id,))
         total_stock = cursor.fetchone()[0] or 0.0
+        
+        # ⚠️ အချိန်အားလုံးစာ စုစုပေါင်း ရရန်ရှိသော ကြွေးကျန်ငွေ
+        cursor.execute("SELECT SUM(total_price - paid_amount) FROM sales WHERE user_id = ? AND status = 'PENDING'", (user_id,))
+        total_pending_debt = cursor.fetchone()[0] or 0.0
+
         conn.close()
 
         total_sales_value = sum(r[0] for r in sales_rows)
@@ -643,7 +647,7 @@ async def report(update: Update, context: ContextTypes.DEFAULT_TYPE):
             "───────────────────\n"
             f"🛒 အရောင်းပမာဏ (စုစုပေါင်း): `{total_sales_value:,.0f}` MMK\n"
             f"💵 ရောင်းရငွေ (လက်ဝယ်ရငွေ): `{total_collected:,.0f}` MMK\n"
-            f"📉 ရရန်ကျန် အကြွေးငွေ: `{(total_sales_value - total_collected):,.0f}` MMK\n"
+            f"📉 ယခုလအတွက် ရရန်ကျန်ငွေ: `{(total_sales_value - total_collected):,.0f}` MMK\n"
             f"📦 ရောင်းရပစ္စည်း ရင်းနှီးစရိတ်: `{total_cogs:,.0f}` MMK\n"
             "───────────────────\n"
             f"📥 ထည့်သွင်းငွေ/အရင်း: `{added_capital:,.0f}` MMK\n"
@@ -654,7 +658,9 @@ async def report(update: Update, context: ContextTypes.DEFAULT_TYPE):
             f"{profit_status} (ယခုလ အသားတင်): `{abs(net_profit):,.0f}` MMK\n"
             f"💰 **စုစုပေါင်း နောက်ဆုံးငွေလက်ကျန်**: `{closing_balance:,.0f}` MMK\n"
             f"   *(ယခင်လက်ကျန် + ယခုလဝင်ငွေ - ယခုလထွက်ငွေ)*\n\n"
-            f"📦 **ဆိုင်ရှိ Stock တန်ဖိုးငွေ:** `{total_stock:,.0f}` MMK"
+            "───────────────────\n"
+            f"📦 **ဆိုင်ရှိ Stock တန်ဖိုးငွေ:** `{total_stock:,.0f}` MMK\n"
+            f"⏳ **စုစုပေါင်း ရရန်ရှိသော ကြွေးကျန်ငွေ:** `{total_pending_debt:,.0f}` MMK"
         )
         await update.message.reply_text(msg, parse_mode="Markdown")
     except Exception as e:
@@ -698,12 +704,12 @@ async def export_excel(update: Update, context: ContextTypes.DEFAULT_TYPE):
                 'item_name': 'ပစ္စည်း',
                 'sale_type': 'အရောင်းအမျိုးအစား',
                 'total_price': 'စုစုပေါင်းတန်ဖိုး',
-                'paid_amount': 'ပေးသွင်းပြီးငွေ',
-                'monthly_payment': 'တစ်လပေးသွင်းငွေ',
-                'status': 'အခြေအနေ',
-                'sale_date': 'စရောင်းသည့်ရက်',
-                'gift_item': 'လက်ဆောင်',
-                'last_payment_date': 'နောက်ဆုံးငွေဆပ်ရက်'
+                'ပေးသွင်းပြီးငွေ': 'paid_amount',
+                'တစ်လပေးသွင်းငွေ': 'monthly_payment',
+                'အခြေအနေ': 'status',
+                'စရောင်းသည့်ရက်': 'date',
+                'လက်ဆောင်': 'gift_item',
+                'နောက်ဆုံးငွေဆပ်ရက်': 'last_payment_date'
             }, inplace=True)
             df_sales.to_excel(writer, sheet_name='Sales', index=False)
             
