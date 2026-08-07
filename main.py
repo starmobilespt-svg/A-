@@ -85,12 +85,12 @@ def get_main_keyboard():
     keyboard = [
         [KeyboardButton("📦 ဝယ်ယူမည်"), KeyboardButton("💸 အသုံးစရိတ်")],
         [KeyboardButton("💵 လက်ငင်းရောင်း"), KeyboardButton("⏳ ကြွေးရောင်း")],
-        [KeyboardButton("🎁 လက်ဆောင်ရောင်း"), KeyboardButton("🔍 ဝယ်သူရှာရန်")],
-        [KeyboardButton("📊 လက်ကျန် Stock"), KeyboardButton("⏳ ကြွေးကျန်သူများ")],
-        [KeyboardButton("📈 လချုပ်/နှစ်ချုပ်"), KeyboardButton("💰 ငွေဆပ်မည်")],
-        [KeyboardButton("📁 Excel Backup"), KeyboardButton("📥 Excel Restore")],
-        [KeyboardButton("💵 ငွေလက်ကျန်"), KeyboardButton("⏳ ကြွေးလက်ကျန်")],
-        [KeyboardButton("📦 Stock အဟောင်း"), KeyboardButton("🗑️/✏️ ဖျက်/ပြင်")]
+        [KeyboardButton("🔍 ဝယ်သူရှာရန်"), KeyboardButton("📊 လက်ကျန် Stock")],
+        [KeyboardButton("⏳ ကြွေးကျန်သူများ"), KeyboardButton("📈 လချုပ်/နှစ်ချုပ်")],
+        [KeyboardButton("💰 ငွေဆပ်မည်"), KeyboardButton("📁 Excel Backup")],
+        [KeyboardButton("📥 Excel Restore"), KeyboardButton("💵 ငွေလက်ကျန်")],
+        [KeyboardButton("⏳ ကြွေးလက်ကျန်"), KeyboardButton("📦 Stock အဟောင်း")],
+        [KeyboardButton("🗑️/✏️ ဖျက်/ပြင်")]
     ]
     return ReplyKeyboardMarkup(keyboard, resize_keyboard=True)
 
@@ -104,7 +104,7 @@ async def show_commands(update: Update, context: ContextTypes.DEFAULT_TYPE):
     msg = (
         "🛍️ **အသုံးပြုနိုင်သော Command များ:**\n\n"
         "📦 **၁။ ပစ္စည်းဝယ်ယူခြင်း:**\n`/buy iPhone 13 | 2 | 1200000`\n\n"
-        "💵 **၂။ ရောင်းချခြင်း:**\n`/sell_cash AungAung | iPhone 13 | 1500000`\n`/sell_installment MgMg | Phone | 1500000 | 300000 | 100000`\n\n"
+        "💵 **၂။ ရောင်းချခြင်း:**\n`/sell_cash AungAung | iPhone 13 | 1500000` (လက်ဆောင်ပါက အနောက်ဆုံးတွင် `| Cover` ဟု ထပ်ထည့်ပါ)\n`/sell_installment MgMg | Phone | 1500000 | 300000 | 100000` (လက်ဆောင်ပါက အနောက်ဆုံးတွင် `| Cover` ဟု ထပ်ထည့်ပါ)\n\n"
         "💰 **၃။ ငွေဆပ်ခြင်း / ငွေသွင်းမှားပါက ပြန်နှုတ်ခြင်း:**\n`/pay 10 | 100000`\n`/undo_pay 10 | 50000` (သွင်းတာမှားရင်ပြန်နှုတ်ရန်)\n\n"
         "🔍 **၄။ ဝယ်သူအမည်ဖြင့် ရှာရန်:**\n`/search Mg Mg`\n\n"
         "⏳ **၅။ ယခင်စာရင်းဟောင်းများ:**\n`/add_stock iPhone | 5 | 800000`\n`/add_credit U Ba | Phone | 500000 | 100000`\n\n"
@@ -233,7 +233,14 @@ async def sell_cash(update: Update, context: ContextTypes.DEFAULT_TYPE):
     user_id = update.message.from_user.id
     try:
         args = " ".join(context.args).split("|")
-        customer, item_name, price = args[0].strip(), args[1].strip(), float(args[2].strip())
+        if len(args) < 3:
+            raise ValueError
+        
+        customer = args[0].strip()
+        item_name = args[1].strip()
+        price = float(args[2].strip())
+        gift = args[3].strip() if len(args) > 3 else ""
+
         if price < 0:
             return await update.message.reply_text("❌ ရောင်းဈေးသည် အပေါင်းလက္ခဏာသာ ဖြစ်ရပါမည်။")
 
@@ -246,50 +253,39 @@ async def sell_cash(update: Update, context: ContextTypes.DEFAULT_TYPE):
             return await update.message.reply_text("❌ လက်ကျန် Stock မလုံလောက်ပါ။")
             
         cursor.execute("UPDATE inventory SET quantity = quantity - 1 WHERE user_id = ? AND item_name = ?", (user_id, item_name))
-        cursor.execute("INSERT INTO sales (user_id, customer_name, item_name, sale_type, total_price, paid_amount, monthly_payment, status, date, gift_item) VALUES (?, ?, ?, 'CASH', ?, ?, 0, 'PAID', ?, '')", (user_id, customer, item_name, price, price, today))
-        sale_id = cursor.lastrowid
-        conn.commit()
-        conn.close()
-        await update.message.reply_text(f"💵 **လက်ငင်း ရောင်းချမှု အောင်မြင်ပါသည်။**\n🆔 ID: `{sale_id}`\n👤 ဝယ်သူ: `{customer}`\n📦 ပစ္စည်း: `{item_name}`", parse_mode="Markdown")
-    except Exception:
-        await update.message.reply_text("❌ `/sell_cash <ဝယ်သူ> | <ပစ္စည်း> | <ရောင်းဈေး>` ဟုသာ ရိုက်ပါ။")
-
-async def sell_gift(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    user_id = update.message.from_user.id
-    try:
-        args = " ".join(context.args).split("|")
-        customer, item_name, price, gift = args[0].strip(), args[1].strip(), float(args[2].strip()), args[3].strip()
-        if price < 0:
-            return await update.message.reply_text("❌ ရောင်းဈေးသည် အပေါင်းလက္ခဏာသာ ဖြစ်ရပါမည်။")
-
-        today = datetime.now(MM_TZ).strftime("%Y-%m-%d")
-        conn = get_db()
-        cursor = conn.cursor()
-        cursor.execute("SELECT quantity FROM inventory WHERE user_id = ? AND item_name = ?", (user_id, item_name))
-        row = cursor.fetchone()
-        if not row or row[0] < 1:
-            return await update.message.reply_text("❌ Stock မလုံလောက်ပါ။")
-            
-        cursor.execute("UPDATE inventory SET quantity = quantity - 1 WHERE user_id = ? AND item_name = ?", (user_id, item_name))
-        for g_item in [g.strip() for g in gift.split(',') if g.strip()]:
-            cursor.execute("SELECT quantity FROM inventory WHERE user_id = ? AND item_name = ?", (user_id, g_item))
-            g_row = cursor.fetchone()
-            if g_row and g_row[0] > 0:
-                cursor.execute("UPDATE inventory SET quantity = quantity - 1 WHERE user_id = ? AND item_name = ?", (user_id, g_item))
         
+        # လက်ဆောင်ပါရင် Stock ကနေ လိုက်နှုတ်ပေးမည်
+        if gift:
+            for g_item in [g.strip() for g in gift.split(',') if g.strip()]:
+                cursor.execute("SELECT quantity FROM inventory WHERE user_id = ? AND item_name = ?", (user_id, g_item))
+                g_row = cursor.fetchone()
+                if g_row and g_row[0] > 0:
+                    cursor.execute("UPDATE inventory SET quantity = quantity - 1 WHERE user_id = ? AND item_name = ?", (user_id, g_item))
+                    
         cursor.execute("INSERT INTO sales (user_id, customer_name, item_name, sale_type, total_price, paid_amount, monthly_payment, status, date, gift_item) VALUES (?, ?, ?, 'CASH', ?, ?, 0, 'PAID', ?, ?)", (user_id, customer, item_name, price, price, today, gift))
         sale_id = cursor.lastrowid
         conn.commit()
         conn.close()
-        await update.message.reply_text(f"🎁 **လက်ဆောင်ပါ လက်ငင်း ရောင်းချပြီးပါပြီ**\n🆔 ID: `{sale_id}`\n👤 ဝယ်သူ: `{customer}`\n🎁 လက်ဆောင်: `{gift}`", parse_mode="Markdown")
+        
+        gift_msg = f"\n🎁 လက်ဆောင်: `{gift}`" if gift else ""
+        await update.message.reply_text(f"💵 **လက်ငင်း ရောင်းချမှု အောင်မြင်ပါသည်။**\n🆔 ID: `{sale_id}`\n👤 ဝယ်သူ: `{customer}`\n📦 ပစ္စည်း: `{item_name}`{gift_msg}", parse_mode="Markdown")
     except Exception:
-        await update.message.reply_text("❌ `/sell_gift <ဝယ်သူ> | <ပစ္စည်း> | <ရောင်းဈေး> | <လက်ဆောင်>`")
+        await update.message.reply_text("❌ `/sell_cash <ဝယ်သူ> | <ပစ္စည်း> | <ရောင်းဈေး> | <လက်ဆောင် (Optional)>` ဟုသာ ရိုက်ပါ။")
 
 async def sell_installment(update: Update, context: ContextTypes.DEFAULT_TYPE):
     user_id = update.message.from_user.id
     try:
         args = " ".join(context.args).split("|")
-        customer, item_name, total_price, down_payment, monthly_pay = args[0].strip(), args[1].strip(), float(args[2].strip()), float(args[3].strip()), float(args[4].strip())
+        if len(args) < 5:
+            raise ValueError
+        
+        customer = args[0].strip()
+        item_name = args[1].strip()
+        total_price = float(args[2].strip())
+        down_payment = float(args[3].strip())
+        monthly_pay = float(args[4].strip())
+        gift = args[5].strip() if len(args) > 5 else ""
+
         if total_price < 0 or down_payment < 0 or monthly_pay < 0:
             return await update.message.reply_text("❌ ငွေပမာဏများသည် အပေါင်းလက္ခဏာသာ ဖြစ်ရပါမည်။")
 
@@ -302,46 +298,25 @@ async def sell_installment(update: Update, context: ContextTypes.DEFAULT_TYPE):
             return await update.message.reply_text("❌ Stock မလုံလောက်ပါ။")
             
         cursor.execute("UPDATE inventory SET quantity = quantity - 1 WHERE user_id = ? AND item_name = ?", (user_id, item_name))
-        status = 'PAID' if down_payment >= total_price else 'PENDING'
-        cursor.execute("INSERT INTO sales (user_id, customer_name, item_name, sale_type, total_price, paid_amount, monthly_payment, status, date, gift_item) VALUES (?, ?, ?, 'INSTALLMENT', ?, ?, ?, ?, ?, '')", (user_id, customer, item_name, total_price, down_payment, monthly_pay, status, today))
-        sale_id = cursor.lastrowid
-        conn.commit()
-        conn.close()
-        await update.message.reply_text(f"⏳ **ကြွေးရောင်း မှတ်တမ်းဝင်သွားပါပြီ!**\n🆔 ID: `{sale_id}`\n👤 ဝယ်သူ: `{customer}`\n📉 ကျန်ငွေ: `{total_price - down_payment:,.0f}` MMK", parse_mode="Markdown")
-    except Exception:
-        await update.message.reply_text("❌ `/sell_installment <ဝယ်သူ> | <ပစ္စည်း> | <စုစုပေါင်းဈေး> | <စပေါ်> | <၁လပေး>`")
-
-async def sell_installment_gift(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    user_id = update.message.from_user.id
-    try:
-        args = " ".join(context.args).split("|")
-        customer, item_name, total_price, down_payment, monthly_pay, gift = args[0].strip(), args[1].strip(), float(args[2].strip()), float(args[3].strip()), float(args[4].strip()), args[5].strip()
-        if total_price < 0 or down_payment < 0 or monthly_pay < 0:
-            return await update.message.reply_text("❌ ငွေပမာဏများသည် အပေါင်းလက္ခဏာသာ ဖြစ်ရပါမည်။")
-
-        today = datetime.now(MM_TZ).strftime("%Y-%m-%d")
-        conn = get_db()
-        cursor = conn.cursor()
-        cursor.execute("SELECT quantity FROM inventory WHERE user_id = ? AND item_name = ?", (user_id, item_name))
-        row = cursor.fetchone()
-        if not row or row[0] < 1:
-            return await update.message.reply_text("❌ Stock မလုံလောက်ပါ။")
-            
-        cursor.execute("UPDATE inventory SET quantity = quantity - 1 WHERE user_id = ? AND item_name = ?", (user_id, item_name))
-        for g_item in [g.strip() for g in gift.split(',') if g.strip()]:
-            cursor.execute("SELECT quantity FROM inventory WHERE user_id = ? AND item_name = ?", (user_id, g_item))
-            g_row = cursor.fetchone()
-            if g_row and g_row[0] > 0:
-                cursor.execute("UPDATE inventory SET quantity = quantity - 1 WHERE user_id = ? AND item_name = ?", (user_id, g_item))
-                
+        
+        # လက်ဆောင်ပါရင် Stock ကနေ လိုက်နှုတ်ပေးမည်
+        if gift:
+            for g_item in [g.strip() for g in gift.split(',') if g.strip()]:
+                cursor.execute("SELECT quantity FROM inventory WHERE user_id = ? AND item_name = ?", (user_id, g_item))
+                g_row = cursor.fetchone()
+                if g_row and g_row[0] > 0:
+                    cursor.execute("UPDATE inventory SET quantity = quantity - 1 WHERE user_id = ? AND item_name = ?", (user_id, g_item))
+                    
         status = 'PAID' if down_payment >= total_price else 'PENDING'
         cursor.execute("INSERT INTO sales (user_id, customer_name, item_name, sale_type, total_price, paid_amount, monthly_payment, status, date, gift_item) VALUES (?, ?, ?, 'INSTALLMENT', ?, ?, ?, ?, ?, ?)", (user_id, customer, item_name, total_price, down_payment, monthly_pay, status, today, gift))
         sale_id = cursor.lastrowid
         conn.commit()
         conn.close()
-        await update.message.reply_text(f"⏳ **လက်ဆောင်ပါ ကြွေးရောင်း မှတ်တမ်းဝင်ပါပြီ!**\n🆔 ID: `{sale_id}`\n👤 ဝယ်သူ: `{customer}`\n🎁 လက်ဆောင်: `{gift}`", parse_mode="Markdown")
+        
+        gift_msg = f"\n🎁 လက်ဆောင်: `{gift}`" if gift else ""
+        await update.message.reply_text(f"⏳ **ကြွေးရောင်း မှတ်တမ်းဝင်သွားပါပြီ!**\n🆔 ID: `{sale_id}`\n👤 ဝယ်သူ: `{customer}`\n📉 ကျန်ငွေ: `{total_price - down_payment:,.0f}` MMK{gift_msg}", parse_mode="Markdown")
     except Exception:
-        await update.message.reply_text("❌ `/sell_installment_gift <ဝယ်သူ> | <ပစ္စည်း> | <စုစုပေါင်း> | <စပေါ်> | <၁လပေး> | <လက်ဆောင်>`")
+        await update.message.reply_text("❌ `/sell_installment <ဝယ်သူ> | <ပစ္စည်း> | <စုစုပေါင်းဈေး> | <စပေါ်> | <၁လပေး> | <လက်ဆောင် (Optional)>`")
 
 async def pay(update: Update, context: ContextTypes.DEFAULT_TYPE):
     user_id = update.message.from_user.id
@@ -405,7 +380,7 @@ async def pay(update: Update, context: ContextTypes.DEFAULT_TYPE):
         await update.message.reply_text("❌ Format မှားယွင်းနေပါသည်။\n`/pay <ဝယ်သူနာမည် သို့မဟုတ် ID> | <ပေးသည့်ပမာဏ>`")
 
 # ====================================================
-# ⏪ ငွေသွင်းမှားပါက ပြန်နှုတ်မည့် Function (အသစ်)
+# ⏪ ငွေသွင်းမှားပါက ပြန်နှုတ်မည့် Function
 # ====================================================
 async def undo_pay(update: Update, context: ContextTypes.DEFAULT_TYPE):
     user_id = update.message.from_user.id
@@ -424,7 +399,6 @@ async def undo_pay(update: Update, context: ContextTypes.DEFAULT_TYPE):
         cursor = conn.cursor()
 
         if target_str.isdigit():
-            # အကြွေးဆပ်ပြီးသားစာရင်း (PAID) ကနေလည်း ပြန်နှုတ်ခွင့်ပေးထားပါသည် (မှားဆပ်မိရင် PENDING ပြန်ဖြစ်သွားပါမည်)
             cursor.execute("SELECT id, customer_name, item_name, total_price, paid_amount FROM sales WHERE user_id = ? AND id = ?", (user_id, int(target_str)))
             rows = cursor.fetchall()
         else:
@@ -471,7 +445,7 @@ async def search_customer(update: Update, context: ContextTypes.DEFAULT_TYPE):
     search_name = " ".join(context.args).strip()
     conn = get_db()
     cursor = conn.cursor()
-    cursor.execute("SELECT id, item_name, total_price, paid_amount, status, date FROM sales WHERE user_id = ? AND customer_name LIKE ? ORDER BY date DESC", (user_id, '%'+search_name+'%'))
+    cursor.execute("SELECT id, item_name, total_price, paid_amount, status, date, gift_item FROM sales WHERE user_id = ? AND customer_name LIKE ? ORDER BY date DESC", (user_id, '%'+search_name+'%'))
     rows = cursor.fetchall()
     conn.close()
     
@@ -483,13 +457,14 @@ async def search_customer(update: Update, context: ContextTypes.DEFAULT_TYPE):
     msg = f"🔍 **'{search_name}' ၏ စာရင်းများ:**\n\n"
     
     for r in rows:
-        sale_id, item_name, total_price, paid_amount, status, date = r
+        sale_id, item_name, total_price, paid_amount, status, date, gift_item = r
         rem = total_price - paid_amount
         total_bought += total_price
         if status == 'PENDING': total_debt += rem
         
         status_icon = "🔴 အကြွေး" if status == 'PENDING' else "🟢 ရှင်းပြီး"
-        msg += f"🆔 ID: `{sale_id}` | 📅 စရောင်းရက်: {date}\n📦 ပစ္စည်း: `{item_name}`\n💰 တန်ဖိုး: `{total_price:,.0f}` | ကျန်ငွေ: `{rem:,.0f}` ({status_icon})\n\n"
+        gift_txt = f"\n🎁 လက်ဆောင်: `{gift_item}`" if gift_item else ""
+        msg += f"🆔 ID: `{sale_id}` | 📅 စရောင်းရက်: {date}\n📦 ပစ္စည်း: `{item_name}`{gift_txt}\n💰 တန်ဖိုး: `{total_price:,.0f}` | ကျန်ငွေ: `{rem:,.0f}` ({status_icon})\n\n"
     
     msg += "───────────────────\n"
     msg += f"🛒 စုစုပေါင်း ဝယ်ယူမှု: `{total_bought:,.0f}` MMK\n"
@@ -545,7 +520,6 @@ async def send_stock_page(update, context, user_id, page=0, is_callback=False):
 async def send_list_page(update, context, user_id, page=0, is_callback=False):
     conn = get_db()
     cursor = conn.cursor()
-    # date (စရောင်းသည့်ရက်) ကိုပါ SELECT လုပ်၍ ဆွဲထုတ်ခြင်း
     cursor.execute("SELECT id, customer_name, item_name, total_price, paid_amount, monthly_payment, last_payment_date, date FROM sales WHERE user_id = ? AND status = 'PENDING'", (user_id,))
     rows = cursor.fetchall()
     conn.close()
@@ -587,7 +561,6 @@ async def send_list_page(update, context, user_id, page=0, is_callback=False):
     else:
         await update.message.reply_text(msg, parse_mode="Markdown", reply_markup=reply_markup)
 
-# Commands for Stock & List using Pagination Helper
 async def stock(update: Update, context: ContextTypes.DEFAULT_TYPE):
     await send_stock_page(update, context, update.message.from_user.id, page=0, is_callback=False)
 
@@ -595,7 +568,7 @@ async def list_pending(update: Update, context: ContextTypes.DEFAULT_TYPE):
     await send_list_page(update, context, update.message.from_user.id, page=0, is_callback=False)
 
 # ====================================================
-# 📊 အရှုံးအမြတ် လချုပ် Report (Opening Balance အပါအဝင်)
+# 📊 အရှုံးအမြတ် လချုပ် Report
 # ====================================================
 async def report(update: Update, context: ContextTypes.DEFAULT_TYPE):
     user_id = update.message.from_user.id
@@ -614,7 +587,6 @@ async def report(update: Update, context: ContextTypes.DEFAULT_TYPE):
         conn = get_db()
         cursor = conn.cursor()
 
-        # ၁။ ယခုကာလအတွက် (Current Month/Year)
         cursor.execute(f"SELECT s.total_price, s.paid_amount, COALESCE(i.cost_price, 0) FROM sales s LEFT JOIN inventory i ON s.item_name = i.item_name AND s.user_id = i.user_id WHERE s.user_id = ? AND strftime('{date_format}', s.date) = ?", (user_id, period))
         sales_rows = cursor.fetchall()
         cursor.execute(f"SELECT SUM(amount) FROM expenses WHERE user_id = ? AND strftime('{date_format}', date) = ?", (user_id, period))
@@ -624,7 +596,6 @@ async def report(update: Update, context: ContextTypes.DEFAULT_TYPE):
         cursor.execute(f"SELECT SUM(total_cost) FROM purchases WHERE user_id = ? AND strftime('{date_format}', date) = ?", (user_id, period))
         total_purchases = cursor.fetchone()[0] or 0.0
 
-        # ၂။ ယခင်လများအတွက် လက်ကျန် (Opening Balance) တွက်ချက်ခြင်း (< ?)
         cursor.execute(f"SELECT SUM(paid_amount) FROM sales WHERE user_id = ? AND strftime('{date_format}', date) < ?", (user_id, period))
         past_collected = cursor.fetchone()[0] or 0.0
         cursor.execute(f"SELECT SUM(amount) FROM expenses WHERE user_id = ? AND strftime('{date_format}', date) < ?", (user_id, period))
@@ -634,7 +605,6 @@ async def report(update: Update, context: ContextTypes.DEFAULT_TYPE):
         cursor.execute(f"SELECT SUM(total_cost) FROM purchases WHERE user_id = ? AND strftime('{date_format}', date) < ?", (user_id, period))
         past_purchases = cursor.fetchone()[0] or 0.0
 
-        # ၃။ Stock တန်ဖိုး 
         cursor.execute("SELECT SUM(quantity * cost_price) FROM inventory WHERE user_id = ? AND quantity > 0", (user_id,))
         total_stock = cursor.fetchone()[0] or 0.0
         conn.close()
@@ -646,13 +616,8 @@ async def report(update: Update, context: ContextTypes.DEFAULT_TYPE):
         net_profit = total_sales_value - total_cogs - total_expense
         profit_status = "🟢 အမြတ်" if net_profit >= 0 else "🔴 အရှုံး"
 
-        # ယခင်လ လက်ကျန်ငွေ (Opening Balance)
         opening_balance = past_capital + past_collected - past_expense - past_purchases
-        
-        # ယခုလ အဝင်အထွက် (Current Month Net Flow)
         current_month_cashflow = added_capital + total_collected - total_expense - total_purchases
-
-        # စုစုပေါင်း နောက်ဆုံးငွေလက်ကျန် (Closing Balance) = အဟောင်း + အသစ်
         closing_balance = opening_balance + current_month_cashflow
 
         msg = (
@@ -708,7 +673,6 @@ async def export_excel(update: Update, context: ContextTypes.DEFAULT_TYPE):
             
             pd.read_sql_query(f"SELECT id, item_name, quantity, cost_price FROM inventory WHERE user_id={user_id}", conn).to_excel(writer, sheet_name='Inventory', index=False)
             
-            # Excel ထဲတွင် Sales Column များကို ရှင်းလင်းစွာ အမည်ပေးခြင်း
             df_sales = pd.read_sql_query(f"SELECT id, customer_name, item_name, sale_type, total_price, paid_amount, monthly_payment, status, date as sale_date, gift_item, last_payment_date FROM sales WHERE user_id={user_id}", conn)
             df_sales.rename(columns={
                 'id': 'ID',
@@ -764,11 +728,9 @@ async def main_callback_handler(update: Update, context: ContextTypes.DEFAULT_TY
     elif data == "guide_edit":
         await query.edit_message_text("✏️ **စာရင်းပြင်ရန်:**\n၁။ မှားယွင်းသော စာရင်းကို အရင်ဖျက်ပါ။ ပြီးမှ အသစ်ပြန်သွင်းပါ။\n၂။ သို့မဟုတ် Excel Backup ယူပြီး ပြင်ဆင်ကာ Bot ထဲသို့ File အဖြစ် ပြန်ပို့ပါ။", parse_mode="Markdown")
     
-    # ငွေသွင်းမှားတာ ပြန်ပြင်ရန် လမ်းညွှန် (အသစ်)
     elif data == "guide_undo_pay":
         await query.edit_message_text("⏪ **ငွေသွင်းမှားတာ ပြန်နှုတ်ရန်:**\n`/undo_pay <ID သို့မဟုတ် အမည်> | <ပြန်နှုတ်မည့်ပမာဏ>` ဟု ရိုက်ထည့်ပါ။\n\n👇 ဥပမာ - (ID 10 ကို ၄သောင်း ပြန်နှုတ်လိုလျှင်)\n`/undo_pay 10 | 40000`", parse_mode="Markdown")
     
-    # ဖျက်မည့် Menu များကို ပြသပေးသော အပိုင်း
     elif data == "menu_del_sale":
         conn = get_db()
         cursor = conn.cursor()
@@ -810,7 +772,6 @@ async def main_callback_handler(update: Update, context: ContextTypes.DEFAULT_TY
         keyboard.append([InlineKeyboardButton("🔙 နောက်သို့", callback_data="cancel_action")])
         await query.edit_message_text("🗑️ **ဖျက်လိုသော Stock ပစ္စည်းကို ရွေးပါ:**", reply_markup=InlineKeyboardMarkup(keyboard), parse_mode="Markdown")
 
-    # အမှန်တကယ် ဖျက်ပစ်မည့် Action များကို ပြုလုပ်သော အပိုင်း
     elif data.startswith("do_del_sale_"):
         sale_id = data.split("_")[3]
         conn = get_db()
@@ -908,11 +869,9 @@ async def handle_button_clicks(update: Update, context: ContextTypes.DEFAULT_TYP
     elif text == "💸 အသုံးစရိတ်":
         await update.message.reply_text("💸 `/expense <အကြောင်းအရာ> | <ပမာဏ>`", parse_mode="Markdown")
     elif text == "💵 လက်ငင်းရောင်း":
-        await update.message.reply_text(f"{get_available_stock_info(user_id)}\n\n💵 `/sell_cash <ဝယ်သူ> | <ပစ္စည်း> | <ရောင်းဈေး>`", parse_mode="Markdown")
+        await update.message.reply_text(f"{get_available_stock_info(user_id)}\n\n💵 `/sell_cash <ဝယ်သူ> | <ပစ္စည်း> | <ရောင်းဈေး> | <လက်ဆောင် (Optional)>`\n(လက်ဆောင်ပေးရန်မရှိပါက နောက်ဆုံးက လက်ဆောင်ကို ချန်လှပ်ထားခဲ့ပါ)", parse_mode="Markdown")
     elif text == "⏳ ကြွေးရောင်း":
-        await update.message.reply_text(f"{get_available_stock_info(user_id)}\n\n⏳ `/sell_installment <ဝယ်သူ> | <ပစ္စည်း> | <စုစုပေါင်းဈေး> | <စပေါ်ငွေ> | <၁လပေးရမည့်ငွေ>`", parse_mode="Markdown")
-    elif text == "🎁 လက်ဆောင်ရောင်း":
-        await update.message.reply_text(f"{get_available_stock_info(user_id)}\n\n🎁 လက်ငင်း: `/sell_gift <ဝယ်သူ> | <ပစ္စည်း> | <ရောင်းဈေး> | <လက်ဆောင်>`", parse_mode="Markdown")
+        await update.message.reply_text(f"{get_available_stock_info(user_id)}\n\n⏳ `/sell_installment <ဝယ်သူ> | <ပစ္စည်း> | <စုစုပေါင်းဈေး> | <စပေါ်ငွေ> | <၁လပေးရမည့်ငွေ> | <လက်ဆောင် (Optional)>`\n(လက်ဆောင်ပေးရန်မရှိပါက နောက်ဆုံးက လက်ဆောင်ကို ချန်လှပ်ထားခဲ့ပါ)", parse_mode="Markdown")
     elif text == "🔍 ဝယ်သူရှာရန်":
         await update.message.reply_text("🔍 **ဝယ်သူအမည်ဖြင့် စာရင်းရှာရန်:**\n`/search <ဝယ်သူနာမည်>`\n👇 `/search Mg Mg`", parse_mode="Markdown")
     elif text == "📈 လချုပ်/နှစ်ချုပ်":
@@ -963,12 +922,9 @@ def main():
     app.add_handler(CommandHandler("add_stock", add_stock))
     app.add_handler(CommandHandler("add_credit", add_credit))
     app.add_handler(CommandHandler("sell_cash", sell_cash))
-    app.add_handler(CommandHandler("sell_gift", sell_gift))
     app.add_handler(CommandHandler("sell_installment", sell_installment))
-    app.add_handler(CommandHandler("sell_installment_gift", sell_installment_gift))
     app.add_handler(CommandHandler("pay", pay))
     
-    # ပြန်နှုတ်ရန် (Undo Pay) Command အသစ်ကို ဤနေရာတွင် ထည့်ထားပါသည်
     app.add_handler(CommandHandler("undo_pay", undo_pay))
     
     app.add_handler(CommandHandler("stock", stock))
