@@ -62,7 +62,6 @@ def init_db():
     if 'gift_item' not in columns:
         cursor.execute("ALTER TABLE sales ADD COLUMN gift_item TEXT DEFAULT ''")
         
-    # နောက်ဆုံးငွေဆပ်ရက် သိမ်းရန် Column အသစ်ထည့်ခြင်း
     if 'last_payment_date' not in columns:
         cursor.execute("ALTER TABLE sales ADD COLUMN last_payment_date TEXT DEFAULT ''")
 
@@ -254,7 +253,6 @@ async def sell_cash(update: Update, context: ContextTypes.DEFAULT_TYPE):
             
         cursor.execute("UPDATE inventory SET quantity = quantity - 1 WHERE user_id = ? AND item_name = ?", (user_id, item_name))
         
-        # လက်ဆောင်ပါရင် Stock ကနေ လိုက်နှုတ်ပေးမည်
         if gift:
             for g_item in [g.strip() for g in gift.split(',') if g.strip()]:
                 cursor.execute("SELECT quantity FROM inventory WHERE user_id = ? AND item_name = ?", (user_id, g_item))
@@ -299,7 +297,6 @@ async def sell_installment(update: Update, context: ContextTypes.DEFAULT_TYPE):
             
         cursor.execute("UPDATE inventory SET quantity = quantity - 1 WHERE user_id = ? AND item_name = ?", (user_id, item_name))
         
-        # လက်ဆောင်ပါရင် Stock ကနေ လိုက်နှုတ်ပေးမည်
         if gift:
             for g_item in [g.strip() for g in gift.split(',') if g.strip()]:
                 cursor.execute("SELECT quantity FROM inventory WHERE user_id = ? AND item_name = ?", (user_id, g_item))
@@ -352,7 +349,6 @@ async def pay(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
         sale_id, customer_name, item_name, total_price, current_paid = rows[0]
         
-        # ⚠️ ကျန်ငွေထက် ပိုထည့်မိခြင်း ရှိ/မရှိ စစ်ဆေးသည့် အပိုင်း
         remaining_debt = total_price - current_paid
         if amount > remaining_debt:
             conn.close()
@@ -365,11 +361,8 @@ async def pay(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
         new_paid = current_paid + amount
         new_status = 'PAID' if new_paid >= total_price else 'PENDING'
-        
-        # ယနေ့ ရက်စွဲကို ယူခြင်း
         today = datetime.now(MM_TZ).strftime("%Y-%m-%d")
 
-        # last_payment_date ကိုပါ တစ်ခါတည်း Update လုပ်ခြင်း
         cursor.execute("UPDATE sales SET paid_amount = ?, status = ?, last_payment_date = ? WHERE user_id = ? AND id = ?", (new_paid, new_status, today, user_id, sale_id))
         conn.commit()
         conn.close()
@@ -379,9 +372,6 @@ async def pay(update: Update, context: ContextTypes.DEFAULT_TYPE):
     except Exception:
         await update.message.reply_text("❌ Format မှားယွင်းနေပါသည်။\n`/pay <ဝယ်သူနာမည် သို့မဟုတ် ID> | <ပေးသည့်ပမာဏ>`")
 
-# ====================================================
-# ⏪ ငွေသွင်းမှားပါက ပြန်နှုတ်မည့် Function
-# ====================================================
 async def undo_pay(update: Update, context: ContextTypes.DEFAULT_TYPE):
     user_id = update.message.from_user.id
     try:
@@ -830,6 +820,7 @@ async def main_callback_handler(update: Update, context: ContextTypes.DEFAULT_TY
             await query.edit_message_text("❌ ပစ္စည်းရှာမတွေ့ပါ။")
         conn.close()
 
+# ⚠️ ဤနေရာတွင် Column အမည်များကို မြန်မာမှ အင်္ဂလိပ်သို့ ပြန်ပြောင်းပေးမည့် Code ထည့်သွင်းထားပါသည်
 async def handle_excel_upload(update: Update, context: ContextTypes.DEFAULT_TYPE):
     user_id = update.message.from_user.id
     document = update.message.document
@@ -849,6 +840,25 @@ async def handle_excel_upload(update: Update, context: ContextTypes.DEFAULT_TYPE
         for table in tables:
             if table in xls.sheet_names:
                 df = pd.read_excel(xls, sheet_name=table)
+                
+                # 'Sales' Sheet မှ မြန်မာလိုပြောင်းထားသော Column များကို Database နာမည်များအတိုင်း ပြန်ပြောင်းခြင်း
+                if table == 'Sales':
+                    reverse_rename = {
+                        'ID': 'id',
+                        'ဝယ်သူအမည်': 'customer_name',
+                        'ပစ္စည်း': 'item_name',
+                        'အရောင်းအမျိုးအစား': 'sale_type',
+                        'စုစုပေါင်းတန်ဖိုး': 'total_price',
+                        'ပေးသွင်းပြီးငွေ': 'paid_amount',
+                        'တစ်လပေးသွင်းငွေ': 'monthly_payment',
+                        'အခြေအနေ': 'status',
+                        'စရောင်းသည့်ရက်': 'date',
+                        'လက်ဆောင်': 'gift_item',
+                        'နောက်ဆုံးငွေဆပ်ရက်': 'last_payment_date'
+                    }
+                    # ရှိနေသော Column များကိုသာ ပြောင်းလဲရန်
+                    df.rename(columns={k: v for k, v in reverse_rename.items() if k in df.columns}, inplace=True)
+                
                 df['user_id'] = user_id
                 cursor.execute(f"DELETE FROM {table.lower()} WHERE user_id = ?", (user_id,))
                 df.to_sql(table.lower(), conn, if_exists='append', index=False)
