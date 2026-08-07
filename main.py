@@ -67,7 +67,6 @@ def init_db():
 
     cursor.execute('''CREATE TABLE IF NOT EXISTS expenses (id INTEGER PRIMARY KEY AUTOINCREMENT, user_id INTEGER, title TEXT, amount REAL, date TEXT)''')
     
-    # ⚠️ အသုံးစရိတ်တွင် Category (အမျိုးအစား) အသစ်ထည့်ခြင်း
     cursor.execute("PRAGMA table_info(expenses)")
     exp_columns = [column[1] for column in cursor.fetchall()]
     if 'category' not in exp_columns:
@@ -109,7 +108,7 @@ async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
 async def show_commands(update: Update, context: ContextTypes.DEFAULT_TYPE):
     msg = (
         "🛍️ **အသုံးပြုနိုင်သော Command များ:**\n\n"
-        "📦 **၁။ ပစ္စည်းဝယ်ယူခြင်း:**\n`/buy iPhone 13 | 2 | 1200000`\n\n"
+        "📦 **၁။ ပစ္စည်းဝယ်ယူခြင်း:**\n`/buy iPhone 13 | 2 | 1200000 | 3000` (Delivery ခ မပါလျှင် နောက်ဆုံးက 3000 ကို ချန်ထားခဲ့ပါ)\n\n"
         "💵 **၂။ ရောင်းချခြင်း:**\n`/sell_cash AungAung | iPhone 13 | 1500000`\n`/sell_installment MgMg | Phone | 1500000 | 300000 | 100000`\n\n"
         "💰 **၃။ ငွေဆပ်ခြင်း / ငွေသွင်းမှားပါက ပြန်နှုတ်ခြင်း:**\n`/pay 10 | 100000`\n`/undo_pay 10 | 50000`\n\n"
         "💸 **၄။ အသုံးစရိတ်စာရင်း:**\n`/expense မီးလင်းခ | ဇူလိုင်အတွက် | 15000`\n\n"
@@ -154,6 +153,8 @@ async def buy(update: Update, context: ContextTypes.DEFAULT_TYPE):
         item_name = args[0].strip()
         qty = int(args[1].strip())
         cost_price = float(args[2].strip())
+        
+        # Delivery ခ ပါ/မပါ စစ်ဆေးခြင်း
         deli_fee = float(args[3].strip()) if len(args) == 4 else 0.0
         
         if qty <= 0 or cost_price < 0 or deli_fee < 0:
@@ -171,21 +172,21 @@ async def buy(update: Update, context: ContextTypes.DEFAULT_TYPE):
             
         cursor.execute("INSERT INTO purchases (user_id, item_name, quantity, total_cost, date) VALUES (?, ?, ?, ?, ?)", (user_id, item_name, qty, qty * cost_price, today))
         
-        # Deli fee ကို အသုံးစရိတ်စာရင်းထဲ Category နှင့်တကွ အလိုအလျောက်သွင်းခြင်း
         if deli_fee > 0:
             cursor.execute("INSERT INTO expenses (user_id, category, title, amount, date) VALUES (?, ?, ?, ?, ?)", (user_id, "ပို့ဆောင်ခ (Deli)", f"{item_name} ဝယ်ယူမှု Delivery", deli_fee, today))
             
         conn.commit()
         conn.close()
-        await update.message.reply_text(f"✅ **ပစ္စည်းဝယ်ယူမှု မှတ်တမ်းတင်ပြီးပါပြီ!**\n\n📦 ပစ္စည်း: `{item_name}`\n🔢 အရေအတွက်: `{qty}` ခု\n💵 ဝယ်ဈေး (တစ်ခု): `{cost_price:,.0f}` MMK", parse_mode="Markdown")
+        
+        deli_msg = f"\n🚚 Delivery ခ: `{deli_fee:,.0f}` MMK" if deli_fee > 0 else ""
+        await update.message.reply_text(f"✅ **ပစ္စည်းဝယ်ယူမှု မှတ်တမ်းတင်ပြီးပါပြီ!**\n\n📦 ပစ္စည်း: `{item_name}`\n🔢 အရေအတွက်: `{qty}` ခု\n💵 ဝယ်ဈေး (တစ်ခု): `{cost_price:,.0f}` MMK{deli_msg}", parse_mode="Markdown")
     except Exception:
-        await update.message.reply_text("❌ `/buy <ပစ္စည်း> | <အရေအတွက်> | <ဝယ်ဈေး>` ဟုသာ ရိုက်ပါ။")
+        await update.message.reply_text("❌ မှားယွင်းနေပါသည်။\nပုံစံ: `/buy <ပစ္စည်း> | <အရေအတွက်> | <ဝယ်ဈေး> | <Deliveryခ (Optional)>`\n\n👇 ဥပမာ\n`/buy iPhone | 5 | 100000 | 3000`\n(သို့မဟုတ်)\n`/buy iPhone | 5 | 100000`", parse_mode="Markdown")
 
 async def add_expense(update: Update, context: ContextTypes.DEFAULT_TYPE):
     user_id = update.message.from_user.id
     try:
         args = " ".join(context.args).split("|")
-        # Category ပါရင် ၃ ခု၊ မပါရင် ၂ ခု (အထွေထွေ)
         if len(args) == 3:
             category, title, amount = args[0].strip(), args[1].strip(), float(args[2].strip())
         elif len(args) == 2:
@@ -575,7 +576,7 @@ async def list_pending(update: Update, context: ContextTypes.DEFAULT_TYPE):
     await send_list_page(update, context, update.message.from_user.id, page=0, is_callback=False)
 
 # ====================================================
-# 📊 အရှုံးအမြတ် လချုပ် Report (အသုံးစရိတ် ခွဲခြမ်းစိတ်ဖြာမှု ပါဝင်သည်)
+# 📊 အရှုံးအမြတ် လချုပ် Report
 # ====================================================
 async def report(update: Update, context: ContextTypes.DEFAULT_TYPE):
     user_id = update.message.from_user.id
@@ -599,7 +600,6 @@ async def report(update: Update, context: ContextTypes.DEFAULT_TYPE):
         cursor.execute(f"SELECT SUM(amount) FROM expenses WHERE user_id = ? AND strftime('{date_format}', date) = ?", (user_id, period))
         total_expense = cursor.fetchone()[0] or 0.0
         
-        # 📂 အသုံးစရိတ် ခွဲခြမ်းစိတ်ဖြာရန် ယူခြင်း
         cursor.execute(f"SELECT category, SUM(amount) FROM expenses WHERE user_id = ? AND strftime('{date_format}', date) = ? GROUP BY category", (user_id, period))
         expense_breakdown = cursor.fetchall()
 
@@ -632,7 +632,6 @@ async def report(update: Update, context: ContextTypes.DEFAULT_TYPE):
         current_month_cashflow = added_capital + total_collected - total_expense - total_purchases
         closing_balance = opening_balance + current_month_cashflow
 
-        # Breakdown စာသားတည်ဆောက်ခြင်း
         exp_breakdown_str = ""
         if expense_breakdown:
             exp_breakdown_str = "\n".join([f"   • {r[0]}: `{r[1]:,.0f}`" for r in expense_breakdown])
@@ -708,7 +707,6 @@ async def export_excel(update: Update, context: ContextTypes.DEFAULT_TYPE):
             }, inplace=True)
             df_sales.to_excel(writer, sheet_name='Sales', index=False)
             
-            # Expenses တွင် Category ပြောင်းလဲမှု
             df_expenses = pd.read_sql_query(f"SELECT id, category, title, amount, date as expense_date FROM expenses WHERE user_id={user_id}", conn)
             df_expenses.rename(columns={
                 'id': 'ID',
@@ -895,7 +893,6 @@ async def handle_excel_upload(update: Update, context: ContextTypes.DEFAULT_TYPE
                     }
                     df.rename(columns={k: v for k, v in reverse_rename.items() if k in df.columns}, inplace=True)
                 
-                # Expenses တွင်လည်း မြန်မာစာမှ အင်္ဂလိပ်သို့ ပြန်ပြောင်းရန်
                 elif table == 'Expenses':
                     reverse_rename_exp = {
                         'ID': 'id',
@@ -922,9 +919,8 @@ async def handle_button_clicks(update: Update, context: ContextTypes.DEFAULT_TYP
     user_id = update.message.from_user.id
     
     if text == "📦 ဝယ်ယူမည်":
-        await update.message.reply_text("📦 `/buy <ပစ္စည်းအမည်> | <အရေအတွက်> | <ဝယ်ဈေး>`", parse_mode="Markdown")
+        await update.message.reply_text("📦 `/buy <ပစ္စည်းအမည်> | <အရေအတွက်> | <ဝယ်ဈေး> | <Deliveryခ (Optional)>`\n\n(Deliveryခ မရှိပါက နောက်ဆုံးကပမာဏကို ချန်လှပ်ထားခဲ့ပါ)", parse_mode="Markdown")
     elif text == "💸 အသုံးစရိတ်":
-        # ⚠️ အသုံးစရိတ် အမျိုးအစား ခွဲခြားရန် Command အသစ် လမ်းညွှန်
         await update.message.reply_text("💸 `/expense <အမျိုးအစား> | <အကြောင်းအရာ> | <ပမာဏ>`\n\n👇 ဥပမာ\n`/expense မီးလင်းခ | ဇူလိုင်လအတွက် | 15000`\n`/expense Delivery | ပစ္စည်းပို့ခ | 3000`", parse_mode="Markdown")
     elif text == "💵 လက်ငင်းရောင်း":
         await update.message.reply_text(f"{get_available_stock_info(user_id)}\n\n💵 `/sell_cash <ဝယ်သူ> | <ပစ္စည်း> | <ရောင်းဈေး> | <လက်ဆောင် (Optional)>`\n(လက်ဆောင်ပေးရန်မရှိပါက နောက်ဆုံးက လက်ဆောင်ကို ချန်လှပ်ထားခဲ့ပါ)", parse_mode="Markdown")
