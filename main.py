@@ -157,7 +157,6 @@ async def buy(update: Update, context: ContextTypes.DEFAULT_TYPE):
         deli_fee = 0.0
         gift = ""
         
-        # 🎁 Smart Parse: Check if arg 4 is Deli Fee (Number) or Gift (String)
         if len(args) >= 4:
             try:
                 deli_fee = float(args[3].strip())
@@ -174,7 +173,6 @@ async def buy(update: Update, context: ContextTypes.DEFAULT_TYPE):
         conn = get_db()
         cursor = conn.cursor()
         
-        # ၁။ Main အဝယ်ပစ္စည်းကို Stock သို့ ပေါင်းထည့်ခြင်း
         cursor.execute("SELECT quantity FROM inventory WHERE user_id = ? AND item_name = ?", (user_id, item_name))
         row = cursor.fetchone()
         if row:
@@ -182,7 +180,6 @@ async def buy(update: Update, context: ContextTypes.DEFAULT_TYPE):
         else:
             cursor.execute("INSERT INTO inventory (user_id, item_name, quantity, cost_price) VALUES (?, ?, ?, ?)", (user_id, item_name, qty, cost_price))
             
-        # ၂။ လက်ဆောင်ပစ္စည်းများ ပါခဲ့လျှင် Stock သို့ အလိုအလျောက် ပေါင်းထည့်ပေးခြင်း
         if gift:
             for g_item in [g.strip() for g in gift.split(',') if g.strip()]:
                 cursor.execute("SELECT quantity FROM inventory WHERE user_id = ? AND item_name = ?", (user_id, g_item))
@@ -192,10 +189,8 @@ async def buy(update: Update, context: ContextTypes.DEFAULT_TYPE):
                 else:
                     cursor.execute("INSERT INTO inventory (user_id, item_name, quantity, cost_price) VALUES (?, ?, 1, 0)", (user_id, g_item))
                     
-        # ၃။ Purchases (အဝယ်စာရင်း) တွင် မှတ်သားခြင်း
         cursor.execute("INSERT INTO purchases (user_id, item_name, quantity, total_cost, date, gift_item) VALUES (?, ?, ?, ?, ?, ?)", (user_id, item_name, qty, qty * cost_price, today, gift))
         
-        # ၄။ Delivery Fee ပါခဲ့လျှင် အသုံးစရိတ်တွင် မှတ်ခြင်း
         if deli_fee > 0:
             cursor.execute("INSERT INTO expenses (user_id, title, amount, date) VALUES (?, ?, ?, ?)", (user_id, f"{item_name} ဝယ်ယူမှု Delivery ခ", deli_fee, today))
             
@@ -441,9 +436,6 @@ async def pay(update: Update, context: ContextTypes.DEFAULT_TYPE):
     except Exception:
         await update.message.reply_text("❌ Format မှားယွင်းနေပါသည်။\n`/pay <ဝယ်သူနာမည် သို့မဟုတ် ID> | <ပေးသည့်ပမာဏ>`")
 
-# ====================================================
-# ⏪ ငွေသွင်းမှားပါက ပြန်နှုတ်မည့် Function 
-# ====================================================
 async def undo_pay(update: Update, context: ContextTypes.DEFAULT_TYPE):
     user_id = update.message.from_user.id
     try:
@@ -753,7 +745,6 @@ async def export_excel(update: Update, context: ContextTypes.DEFAULT_TYPE):
             pd.read_sql_query(f"SELECT id, title, amount, date FROM expenses WHERE user_id={user_id}", conn).to_excel(writer, sheet_name='Expenses', index=False)
             pd.read_sql_query(f"SELECT id, amount, date FROM capital WHERE user_id={user_id}", conn).to_excel(writer, sheet_name='Capital', index=False)
             
-            # အဝယ်စာရင်း Export ထုတ်ရာတွင်လည်း လက်ဆောင်များကိုပါ ပြသပေးမည်
             df_purchases = pd.read_sql_query(f"SELECT id, item_name, quantity, total_cost, date, gift_item FROM purchases WHERE user_id={user_id}", conn)
             df_purchases.rename(columns={
                 'id': 'ID', 'item_name': 'ဝယ်ယူသည့်ပစ္စည်း', 'quantity': 'အရေအတွက်', 'total_cost': 'စုစုပေါင်းကုန်ကျငွေ', 'date': 'ရက်စွဲ', 'gift_item': 'ရရှိသောလက်ဆောင်များ'
@@ -907,6 +898,7 @@ async def main_callback_handler(update: Update, context: ContextTypes.DEFAULT_TY
             await query.edit_message_text("❌ ပစ္စည်းရှာမတွေ့ပါ။")
         conn.close()
 
+# ⏪ Excel Restore လုပ်သည့် Function (Column အမည်များ ပြန်လည်ပြင်ဆင်ထားပါသည်)
 async def handle_excel_upload(update: Update, context: ContextTypes.DEFAULT_TYPE):
     user_id = update.message.from_user.id
     document = update.message.document
@@ -926,6 +918,35 @@ async def handle_excel_upload(update: Update, context: ContextTypes.DEFAULT_TYPE
         for table in tables:
             if table in xls.sheet_names:
                 df = pd.read_excel(xls, sheet_name=table)
+                
+                # မြန်မာလို ပြောင်းထားသော Column များကို Database ကနားလည်သည့် အင်္ဂလိပ်လို ပြန်ပြောင်းပေးခြင်း
+                if table == 'Sales':
+                    reverse_sales_map = {
+                        'ID': 'id',
+                        'ဝယ်သူအမည်': 'customer_name',
+                        'ပစ္စည်း': 'item_name',
+                        'အရောင်းအမျိုးအစား': 'sale_type',
+                        'စုစုပေါင်းတန်ဖိုး': 'total_price',
+                        'ပေးသွင်းပြီးငွေ': 'paid_amount',
+                        'တစ်လပေးသွင်းငွေ': 'monthly_payment',
+                        'အခြေအနေ': 'status',
+                        'စရောင်းသည့်ရက်': 'date',
+                        'လက်ဆောင်': 'gift_item',
+                        'နောက်ဆုံးငွေဆပ်ရက်': 'last_payment_date'
+                    }
+                    df.rename(columns=reverse_sales_map, inplace=True)
+                
+                if table == 'Purchases':
+                    reverse_purchases_map = {
+                        'ID': 'id', 
+                        'ဝယ်ယူသည့်ပစ္စည်း': 'item_name', 
+                        'အရေအတွက်': 'quantity', 
+                        'စုစုပေါင်းကုန်ကျငွေ': 'total_cost', 
+                        'ရက်စွဲ': 'date', 
+                        'ရရှိသောလက်ဆောင်များ': 'gift_item'
+                    }
+                    df.rename(columns=reverse_purchases_map, inplace=True)
+
                 df['user_id'] = user_id
                 cursor.execute(f"DELETE FROM {table.lower()} WHERE user_id = ?", (user_id,))
                 df.to_sql(table.lower(), conn, if_exists='append', index=False)
@@ -933,9 +954,9 @@ async def handle_excel_upload(update: Update, context: ContextTypes.DEFAULT_TYPE
         conn.commit()
         conn.close()
         os.remove(temp_path)
-        await status_msg.edit_text("✅ **Excel File မှ စာရင်းများကို Restore လုပ်ပြီးပါပြီ!**")
+        await status_msg.edit_text("✅ **Excel File မှ စာရင်းများကို အောင်မြင်စွာ Restore လုပ်ပြီးပါပြီ!**")
     except Exception as e:
-        await status_msg.edit_text(f"❌ Error: {str(e)}")
+        await status_msg.edit_text(f"❌ Restore မလုပ်နိုင်ပါ။ စာရင်းများမမှန်ကန်ပါ သို့မဟုတ် Error ဖြစ်နေပါသည်။\nအသေးစိတ်: {str(e)}")
 
 async def handle_button_clicks(update: Update, context: ContextTypes.DEFAULT_TYPE):
     text = update.message.text
