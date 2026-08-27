@@ -163,9 +163,9 @@ async def show_commands(update: Update, context: ContextTypes.DEFAULT_TYPE):
         "📦 **၁။ ပစ္စည်း ဝယ်ယူခြင်း (အများအပြားပါ ရပါသည်):**\n"
         "`/buy iPhone 13 : 2 : 1200000 , Cover : 10 : 5000 | 5000 | Screen Guard | 10`\n\n"
         "💵 **၂။ လက်ငင်း ရောင်းချခြင်း:**\n"
-        "`/sell_cash AungAung | iPhone 13 : 2 : 1500000 , Cover : 5 : 5000 | 091234567 | Cover`\n\n"
+        "`/sell_cash AungAung | iPhone 13 : 2 : 1500000 , Cover : 5 : 5000 | 091234567 | Cover : 2 , Guard : 1`\n\n"
         "⏳ **၃။ ကြွေးရောင်းချခြင်း:**\n"
-        "`/sell_installment MgMg | Phone : 1 : 1500000 , Cover : 2 : 10000 | 300000 | 100000 | 091234567 | Cover`\n\n"
+        "`/sell_installment MgMg | Phone : 1 : 1500000 , Cover : 2 : 10000 | 300000 | 100000 | 091234567 | Cover : 2`\n\n"
         "💰 **၄။ ငွေဆပ်ခြင်း / ငွေသွင်းမှားပါက ပြန်နှုတ်ခြင်း:**\n`/pay 10 | 100000`\n`/undo_pay 10 | 50000`\n\n"
         "❌ **၅။ အကြွေးဆုံး သတ်မှတ်ခြင်း:**\n`/bad_debt 10`\n`/undo_bad_debt 10`\n\n"
         "💸 **၆။ အသုံးစရိတ်စာရင်း:**\n`/expense မီးလင်းခ | ဇူလိုင်အတွက် | 15000`\n\n"
@@ -384,6 +384,7 @@ async def sell_cash(update: Update, context: ContextTypes.DEFAULT_TYPE):
         customer = args[0].strip()
         raw_items_str = args[1].strip()
         
+        # Single-item format (Legacy fallback)
         if len(args) >= 3 and not (":" in raw_items_str or "," in raw_items_str):
             item_name = args[1].strip()
             price = float(args[2].strip())
@@ -391,6 +392,7 @@ async def sell_cash(update: Update, context: ContextTypes.DEFAULT_TYPE):
             phone = args[3].strip() if len(args) > 3 else ""
             gift = args[4].strip() if len(args) > 4 else ""
         else:
+            # Multi-item format
             items_list = parse_multi_items(raw_items_str)
             phone = args[2].strip() if len(args) > 2 else ""
             gift = args[3].strip() if len(args) > 3 else ""
@@ -404,6 +406,7 @@ async def sell_cash(update: Update, context: ContextTypes.DEFAULT_TYPE):
         conn = get_db()
         cursor = conn.cursor()
 
+        # Check stock for items
         for item in items_list:
             i_name, i_qty = item['name'], item['qty']
             cursor.execute("SELECT quantity FROM inventory WHERE user_id = ? AND item_name = ?", (user_id, i_name))
@@ -417,6 +420,7 @@ async def sell_cash(update: Update, context: ContextTypes.DEFAULT_TYPE):
         items_summary_txt = ""
         db_items_names = []
 
+        # Deduct items from stock
         for item in items_list:
             i_name, i_qty, i_price = item['name'], item['qty'], item['price']
             subtotal = i_qty * i_price
@@ -426,23 +430,30 @@ async def sell_cash(update: Update, context: ContextTypes.DEFAULT_TYPE):
             
             cursor.execute("UPDATE inventory SET quantity = quantity - ? WHERE user_id = ? AND item_name = ?", (i_qty, user_id, i_name))
 
+        # 🎁 လက်ဆောင်ပစ္စည်း အများကြီးကို အရေအတွက်နှင့်တကွ နှုတ်မည့်အပိုင်း
+        final_gift_str = ""
         if gift:
-            for g_item in [g.strip() for g in gift.split(',') if g.strip()]:
-                cursor.execute("SELECT quantity FROM inventory WHERE user_id = ? AND item_name = ?", (user_id, g_item))
+            gift_list = parse_multi_items(gift)
+            db_gift_names = []
+            for g_item in gift_list:
+                g_name, g_qty = g_item['name'], g_item['qty']
+                cursor.execute("SELECT quantity FROM inventory WHERE user_id = ? AND item_name = ?", (user_id, g_name))
                 g_row = cursor.fetchone()
-                if g_row and g_row[0] > 0:
-                    cursor.execute("UPDATE inventory SET quantity = quantity - 1 WHERE user_id = ? AND item_name = ?", (user_id, g_item))
+                if g_row:
+                    cursor.execute("UPDATE inventory SET quantity = quantity - ? WHERE user_id = ? AND item_name = ?", (g_qty, user_id, g_name))
+                db_gift_names.append(f"{g_name} ({g_qty}ခု)")
+            final_gift_str = ", ".join(db_gift_names)
 
         today = datetime.now(MM_TZ).strftime("%Y-%m-%d")
         combined_item_str = ", ".join(db_items_names)
         
-        cursor.execute("INSERT INTO sales (user_id, customer_name, item_name, sale_type, total_price, paid_amount, monthly_payment, status, date, gift_item, phone_number) VALUES (?, ?, ?, 'CASH', ?, ?, 0, 'PAID', ?, ?, ?)", (user_id, customer, combined_item_str, grand_total, grand_total, today, gift, phone))
+        cursor.execute("INSERT INTO sales (user_id, customer_name, item_name, sale_type, total_price, paid_amount, monthly_payment, status, date, gift_item, phone_number) VALUES (?, ?, ?, 'CASH', ?, ?, 0, 'PAID', ?, ?, ?)", (user_id, customer, combined_item_str, grand_total, grand_total, today, final_gift_str, phone))
         sale_id = cursor.lastrowid
         conn.commit()
         conn.close()
 
         ph_msg = f"\n📱 ဖုန်း: `{phone}`" if phone else ""
-        gift_msg = f"\n🎁 လက်ဆောင်: `{gift}`" if gift else ""
+        gift_msg = f"\n🎁 လက်ဆောင်: `{final_gift_str}`" if final_gift_str else ""
 
         reply_msg = (
             f"💵 **လက်ငင်း ရောင်းချမှု အောင်မြင်ပါသည်။**\n"
@@ -458,9 +469,10 @@ async def sell_cash(update: Update, context: ContextTypes.DEFAULT_TYPE):
     except Exception:
         await update.message.reply_text(
             "❌ **ရောင်းချမှု ပုံစံ မှားယွင်းနေပါသည်။**\n\n"
-            "👉 **ပုံစံ:** `/sell_cash ဝယ်သူ | ပစ္စည်း၁ : အရေအတွက်၁ : ရောင်းဈေး၁ , ပစ္စည်း၂ : အရေအတွက်၂ : ရောင်းဈေး၂ | ဖုန်း | လက်ဆောင်`\n\n"
+            "👉 **ပုံစံ:** `/sell_cash ဝယ်သူ | ပစ္စည်း၁ : အရေအတွက်၁ : ရောင်းဈေး၁ | ဖုန်း (မထည့်လည်းရ) | လက်ဆောင် (မထည့်လည်းရ)`\n\n"
             "👇 **ဥပမာ:**\n"
-            "`/sell_cash AungAung | iPhone 13 : 2 : 1500000 , Cover : 5 : 5000 | 091234567 | Screen Guard`",
+            "`/sell_cash AungAung | iPhone 13 : 2 : 1500000 | 091234567 | Screen Guard : 2 , Cover : 1`\n"
+            "`/sell_cash MgMg | Cover : 1 : 5000` (ဖုန်း၊ လက်ဆောင် မပါ)",
             parse_mode="Markdown"
         )
 
@@ -471,11 +483,12 @@ async def sell_installment(update: Update, context: ContextTypes.DEFAULT_TYPE):
     user_id = update.message.from_user.id
     try:
         args = " ".join(context.args).split("|")
-        if len(args) < 3: raise ValueError
+        if len(args) < 4: raise ValueError
         
         customer = args[0].strip()
         raw_items_str = args[1].strip()
         
+        # Single-item format (Legacy fallback)
         if len(args) >= 5 and not (":" in raw_items_str or "," in raw_items_str):
             item_name = args[1].strip()
             grand_total = float(args[2].strip())
@@ -485,6 +498,7 @@ async def sell_installment(update: Update, context: ContextTypes.DEFAULT_TYPE):
             phone = args[5].strip() if len(args) > 5 else ""
             gift = args[6].strip() if len(args) > 6 else ""
         else:
+            # Multi-item format
             items_list = parse_multi_items(raw_items_str)
             down_payment = float(args[2].strip())
             monthly_pay = float(args[3].strip())
@@ -500,6 +514,7 @@ async def sell_installment(update: Update, context: ContextTypes.DEFAULT_TYPE):
         conn = get_db()
         cursor = conn.cursor()
 
+        # Check stock for items
         for item in items_list:
             i_name, i_qty = item['name'], item['qty']
             cursor.execute("SELECT quantity FROM inventory WHERE user_id = ? AND item_name = ?", (user_id, i_name))
@@ -513,6 +528,7 @@ async def sell_installment(update: Update, context: ContextTypes.DEFAULT_TYPE):
         items_summary_txt = ""
         db_items_names = []
 
+        # Deduct items from stock
         for item in items_list:
             i_name, i_qty, i_price = item['name'], item['qty'], item['price']
             subtotal = i_qty * i_price
@@ -522,25 +538,32 @@ async def sell_installment(update: Update, context: ContextTypes.DEFAULT_TYPE):
             
             cursor.execute("UPDATE inventory SET quantity = quantity - ? WHERE user_id = ? AND item_name = ?", (i_qty, user_id, i_name))
 
+        # 🎁 လက်ဆောင်ပစ္စည်း အများကြီးကို အရေအတွက်နှင့်တကွ နှုတ်မည့်အပိုင်း
+        final_gift_str = ""
         if gift:
-            for g_item in [g.strip() for g in gift.split(',') if g.strip()]:
-                cursor.execute("SELECT quantity FROM inventory WHERE user_id = ? AND item_name = ?", (user_id, g_item))
+            gift_list = parse_multi_items(gift)
+            db_gift_names = []
+            for g_item in gift_list:
+                g_name, g_qty = g_item['name'], g_item['qty']
+                cursor.execute("SELECT quantity FROM inventory WHERE user_id = ? AND item_name = ?", (user_id, g_name))
                 g_row = cursor.fetchone()
-                if g_row and g_row[0] > 0:
-                    cursor.execute("UPDATE inventory SET quantity = quantity - 1 WHERE user_id = ? AND item_name = ?", (user_id, g_item))
+                if g_row:
+                    cursor.execute("UPDATE inventory SET quantity = quantity - ? WHERE user_id = ? AND item_name = ?", (g_qty, user_id, g_name))
+                db_gift_names.append(f"{g_name} ({g_qty}ခု)")
+            final_gift_str = ", ".join(db_gift_names)
 
         today = datetime.now(MM_TZ).strftime("%Y-%m-%d")
         combined_item_str = ", ".join(db_items_names)
         status = 'PAID' if down_payment >= grand_total else 'PENDING'
 
-        cursor.execute("INSERT INTO sales (user_id, customer_name, item_name, sale_type, total_price, paid_amount, monthly_payment, status, date, gift_item, phone_number) VALUES (?, ?, ?, 'INSTALLMENT', ?, ?, ?, ?, ?, ?, ?)", (user_id, customer, combined_item_str, grand_total, down_payment, monthly_pay, status, today, gift, phone))
+        cursor.execute("INSERT INTO sales (user_id, customer_name, item_name, sale_type, total_price, paid_amount, monthly_payment, status, date, gift_item, phone_number) VALUES (?, ?, ?, 'INSTALLMENT', ?, ?, ?, ?, ?, ?, ?)", (user_id, customer, combined_item_str, grand_total, down_payment, monthly_pay, status, today, final_gift_str, phone))
         sale_id = cursor.lastrowid
         conn.commit()
         conn.close()
 
         remaining_debt = grand_total - down_payment
         ph_msg = f"\n📱 ဖုန်း: `{phone}`" if phone else ""
-        gift_msg = f"\n🎁 လက်ဆောင်: `{gift}`" if gift else ""
+        gift_msg = f"\n🎁 လက်ဆောင်: `{final_gift_str}`" if final_gift_str else ""
 
         reply_msg = (
             f"⏳ **ကြွေးရောင်း မှတ်တမ်းဝင်သွားပါပြီ!**\n"
@@ -559,9 +582,10 @@ async def sell_installment(update: Update, context: ContextTypes.DEFAULT_TYPE):
     except Exception:
         await update.message.reply_text(
             "❌ **ကြွေးရောင်းမှု ပုံစံ မှားယွင်းနေပါသည်။**\n\n"
-            "👉 **ပုံစံ:** `/sell_installment ဝယ်သူ | ပစ္စည်း၁ : အရေအတွက်၁ : ရောင်းဈေး၁ , ပစ္စည်း၂ : အရေအတွက်၂ : ရောင်းဈေး၂ | စပေါ်ငွေ | ၁လပေး | ဖုန်း | လက်ဆောင်`\n\n"
+            "👉 **ပုံစံ:** `/sell_installment ဝယ်သူ | ပစ္စည်း၁ : အရေအတွက်၁ : ရောင်းဈေး၁ | စပေါ်ငွေ | ၁လပေး | ဖုန်း (မထည့်လည်းရ) | လက်ဆောင် (မထည့်လည်းရ)`\n\n"
             "👇 **ဥပမာ:**\n"
-            "`/sell_installment MgMg | Phone : 1 : 1500000 , Cover : 2 : 10000 | 300000 | 100000 | 091234567 | Cover`",
+            "`/sell_installment MgMg | Phone : 1 : 1500000 | 300000 | 100000 | 091234567 | Screen Guard : 2 , Cover : 1`\n"
+            "`/sell_installment SuSu | Earphone : 2 : 15000 | 10000 | 5000` (ဖုန်း၊ လက်ဆောင် မပါ)",
             parse_mode="Markdown"
         )
 
@@ -1221,12 +1245,14 @@ async def main_callback_handler(update: Update, context: ContextTypes.DEFAULT_TY
         if row:
             cursor.execute("DELETE FROM sales WHERE user_id = ? AND id = ?", (user_id, sale_id))
             restore_sale_stock(user_id, row[0], cursor)
+            
+            # လက်ဆောင်ပစ္စည်းများကိုပါ Stock ထဲ အလိုအလျောက် ပြန်ပေါင်းထည့်ပေးမည့်အပိုင်း
             if row[1]:
-                for g in [x.strip() for x in row[1].split(',') if x.strip()]:
-                    cursor.execute("UPDATE inventory SET quantity = quantity + 1 WHERE user_id = ? AND item_name = ?", (user_id, g))
+                restore_sale_stock(user_id, row[1], cursor)
+                
             conn.commit()
             conn.close()
-            await refresh_del_sale_menu(update, user_id, msg=f"✅ ID `{sale_id}` အရောင်းစာရင်း ဖျက်လိုက်ပါပြီ။ Stock ကို ပြန်ပေါင်းထည့်ပေးထားပါသည်။")
+            await refresh_del_sale_menu(update, user_id, msg=f"✅ ID `{sale_id}` အရောင်းစာရင်း ဖျက်လိုက်ပါပြီ။ Stock နှင့် လက်ဆောင်ပစ္စည်းများကို ပြန်ပေါင်းထည့်ပေးထားပါသည်။")
         else:
             conn.close()
             await refresh_del_sale_menu(update, user_id, msg="❌ စာရင်းရှာမတွေ့ပါ။")
@@ -1361,9 +1387,9 @@ async def handle_button_clicks(update: Update, context: ContextTypes.DEFAULT_TYP
     elif text == "💸 အသုံးစရိတ်":
         await update.message.reply_text("💸 `/expense <အမျိုးအစား> | <အကြောင်းအရာ> | <ပမာဏ>`\n\n👇 ဥပမာ\n`/expense မီးလင်းခ | ဇူလိုင်လအတွက် | 15000`\n`/expense Delivery | ပစ္စည်းပို့ခ | 3000`", parse_mode="Markdown")
     elif text == "💵 လက်ငင်းရောင်း":
-        await update.message.reply_text(f"{get_available_stock_info(user_id)}\n\n💵 `/sell_cash ဝယ်သူ | ပစ္စည်း၁ : အရေအတွက်၁ : ရောင်းဈေး၁ , ပစ္စည်း၂ : အရေအတွက်၂ : ရောင်းဈေး၂ | ဖုန်း | လက်ဆောင်`\n\n👇 ဥပမာ\n`/sell_cash AungAung | iPhone 13 : 2 : 1500000 , Cover : 5 : 5000 | 091234567 | Cover`", parse_mode="Markdown")
+        await update.message.reply_text(f"{get_available_stock_info(user_id)}\n\n💵 `/sell_cash ဝယ်သူ | ပစ္စည်း၁ : အရေအတွက်၁ : ရောင်းဈေး၁ , ပစ္စည်း၂ : အရေအတွက်၂ : ရောင်းဈေး၂ | ဖုန်း | လက်ဆောင်`\n\n👇 ဥပမာ\n`/sell_cash AungAung | iPhone 13 : 2 : 1500000 , Cover : 5 : 5000 | 091234567 | Cover : 2 , Guard : 1`\n\n*(မှတ်ချက်: ဖုန်း နှင့် လက်ဆောင် မထည့်ချင်ပါက မထည့်ဘဲ ချန်ထားခဲ့နိုင်ပါသည်။)*", parse_mode="Markdown")
     elif text == "⏳ ကြွေးရောင်း":
-        await update.message.reply_text(f"{get_available_stock_info(user_id)}\n\n⏳ `/sell_installment ဝယ်သူ | ပစ္စည်း၁ : အရေအတွက်၁ : ရောင်းဈေး၁ , ပစ္စည်း၂ : အရေအတွက်၂ : ရောင်းဈေး၂ | စပေါ်ငွေ | ၁လပေး | ဖုန်း | လက်ဆောင်`\n\n👇 ဥပမာ\n`/sell_installment MgMg | Phone : 1 : 1500000 , Cover : 2 : 10000 | 300000 | 100000 | 091234567 | Cover`", parse_mode="Markdown")
+        await update.message.reply_text(f"{get_available_stock_info(user_id)}\n\n⏳ `/sell_installment ဝယ်သူ | ပစ္စည်း၁ : အရေအတွက်၁ : ရောင်းဈေး၁ , ပစ္စည်း၂ : အရေအတွက်၂ : ရောင်းဈေး၂ | စပေါ်ငွေ | ၁လပေး | ဖုန်း | လက်ဆောင်`\n\n👇 ဥပမာ\n`/sell_installment MgMg | Phone : 1 : 1500000 , Cover : 2 : 10000 | 300000 | 100000 | 091234567 | Cover : 2`\n\n*(မှတ်ချက်: ဖုန်း နှင့် လက်ဆောင် မထည့်ချင်ပါက မထည့်ဘဲ ချန်ထားခဲ့နိုင်ပါသည်။)*", parse_mode="Markdown")
     elif text == "🔍 ဝယ်သူရှာရန်":
         await update.message.reply_text("🔍 **ဝယ်သူအမည်ဖြင့် စာရင်းရှာရန်:**\n`/search <ဝယ်သူနာမည်>`\n👇 `/search Mg Mg`", parse_mode="Markdown")
     elif text == "📈 လချုပ်/နှစ်ချုပ်":
