@@ -146,11 +146,11 @@ async def show_commands(update: Update, context: ContextTypes.DEFAULT_TYPE):
     msg = (
         "🛍️ **အသုံးပြုနိုင်သော Command များ:**\n\n"
         "📦 **၁။ ပစ္စည်း ဝယ်ယူခြင်း:**\n"
-        "`/buy iPhone 13 : 2 : 1200000 , Cover : 10 : 5000 | 5000 | Screen Guard : 10`\n\n"
-        "💵 **၂။ လက်ငင်း ရောင်းချခြင်း (လက်ဆောင် အများအပြားပေးနိုင်):**\n"
-        "`/sell_cash AungAung | iPhone 13 : 2 : 1500000 , Cover : 5 : 5000 | 091234567 | Cover : 2 , Guard : 1`\n\n"
+        "`/buy iPhone 13 : 2 : 1200000 , Cover : 10 : 5000 | 5000 | Screen Guard : 5`\n\n"
+        "💵 **၂။ လက်ငင်း ရောင်းချခြင်း (လက်ဆောင်အမျိုးအစား/အရေအတွက် စိတ်ကြိုက်):**\n"
+        "`/sell_cash AungAung | iPhone 13 : 2 : 1500000 | 091234567 | Cover : 2 , Guard : 1`\n\n"
         "⏳ **၃။ ကြွေးရောင်းချခြင်း (ကျန်သောလ ထည့်သွင်းခြင်း):**\n"
-        "`/sell_installment MgMg | Phone : 1 : 1500000 , Cover : 2 : 10000 | 300000 | 5 | 100000 | 091234567 | Cover : 2 , Guard : 1`\n\n"
+        "`/sell_installment MgMg | Phone : 1 : 1500000 | 300000 | 5 | 100000 | 091234567 | Cover : 2 , Guard : 1`\n\n"
         "💰 **၄။ ငွေဆပ်ခြင်း / ပြန်နှုတ်ခြင်း:**\n`/pay 10 | 100000`\n`/undo_pay 10 | 50000`\n\n"
         "❌ **၅။ အကြွေးဆုံး သတ်မှတ်ခြင်း:**\n`/bad_debt 10`\n`/undo_bad_debt 10`\n\n"
         "💸 **၆။ အသုံးစရိတ်စာရင်း:**\n`/expense မီးလင်းခ | ဇူလိုင်အတွက် | 15000`\n\n"
@@ -363,7 +363,7 @@ async def add_credit(update: Update, context: ContextTypes.DEFAULT_TYPE):
         await update.message.reply_text("❌ `/add_credit <ဝယ်သူ> | <ပစ္စည်း> | <အကြွေးစုစုပေါင်း> | <တစ်လပေးရမည့်ငွေ> | <ဖုန်း>` ဟုသာ ရိုက်ပါ။")
 
 # ====================================================
-# 💵 လက်ငင်း ရောင်းချခြင်း (Multi-Item Sell Cash & Gifts)
+# 💵 လက်ငင်း ရောင်းချခြင်း (Multi-Item Sell Cash & Multiple Custom Gifts)
 # ====================================================
 async def sell_cash(update: Update, context: ContextTypes.DEFAULT_TYPE):
     user_id = update.message.from_user.id
@@ -399,7 +399,7 @@ async def sell_cash(update: Update, context: ContextTypes.DEFAULT_TYPE):
             if not inv or avail < i_qty:
                 return await update.message.reply_text(f"❌ **Stock မလုံလောက်ပါ!**\n`{i_name}` ပစ္စည်းမှာ လက်ရှိ `{avail}` ခုသာ ရှိပါသည်။", parse_mode="Markdown")
 
-        # Check stock for gifts if multiple gifts are given
+        # Check stock for gifts (multiple gifts supported)
         gift_list = []
         if gift:
             gift_list = parse_multi_items(gift)
@@ -466,7 +466,7 @@ async def sell_cash(update: Update, context: ContextTypes.DEFAULT_TYPE):
         )
         await update.message.reply_text(reply_msg, parse_mode="Markdown")
 
-    except Exception as e:
+    except Exception:
         await update.message.reply_text(
             "❌ **ရောင်းချမှု ပုံစံ မှားယွင်းနေပါသည်။**\n\n"
             "👉 **ပုံစံ:** `/sell_cash ဝယ်သူ | ပစ္စည်း၁ : အရေအတွက်၁ : ရောင်းဈေး၁ | ဖုန်း | လက်ဆောင်၁ : အရေအတွက်၁ , လက်ဆောင်၂ : အရေအတွက်၂`",
@@ -474,7 +474,7 @@ async def sell_cash(update: Update, context: ContextTypes.DEFAULT_TYPE):
         )
 
 # ====================================================
-# ⏳ ကြွေးရောင်းချခြင်း (Multi-Item Sell Installment with Remaining Months & Multiple Gifts)
+# ⏳ ကြွေးရောင်းချခြင်း (Multi-Item Sell Installment with Remaining Months & Multiple Custom Gifts)
 # ====================================================
 async def sell_installment(update: Update, context: ContextTypes.DEFAULT_TYPE):
     user_id = update.message.from_user.id
@@ -496,7 +496,7 @@ async def sell_installment(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
         items_list = parse_multi_items(raw_items_str)
         if not items_list:
-            return update.message.reply_text("❌ ရောင်းချသည့် ပစ္စည်းအချက်အလက် မှားယွင်းနေပါသည်။")
+            return await update.message.reply_text("❌ ရောင်းချသည့် ပစ္စည်းအချက်အလက် မှားယွင်းနေပါသည်။")
 
         # Check stock for items
         for item in items_list:
@@ -506,7 +506,7 @@ async def sell_installment(update: Update, context: ContextTypes.DEFAULT_TYPE):
             if not inv or avail < i_qty:
                 return await update.message.reply_text(f"❌ **Stock မလုံလောက်ပါ!** `{i_name}` တွင် `{avail}` ခုသာ ရှိပါသည်။", parse_mode="Markdown")
 
-        # Check stock for gifts if multiple gifts are given
+        # Check stock for gifts (multiple gifts supported)
         gift_list = []
         if gift:
             gift_list = parse_multi_items(gift)
@@ -580,7 +580,7 @@ async def sell_installment(update: Update, context: ContextTypes.DEFAULT_TYPE):
     except Exception as e:
         await update.message.reply_text(
             "❌ **ကြွေးရောင်းမှု ပုံစံ မှားယွင်းနေပါသည်။**\n\n"
-            "👉 **ပုံစံ:** `/sell_installment ဝယ်သူ | ပစ္စည်း | စပေါ်ငွေ | ကျန်သောလ | ၁လပေး | ဖုန်း | လက်ဆောင်`\n"
+            "👉 **ပုံစံ:** `/sell_installment ဝယ်သူ | ပစ္စည်း | စပေါ်ငွေ | ကျန်သောလ | ၁လပေး | ဖုန်း | လက်ဆောင်၁ : အရေအတွက်၁ , လက်ဆောင်၂ : အရေအတွက်၂`\n"
             "👇 **ဥပမာ:**\n"
             "`/sell_installment MgMg | Phone : 1 , Cover : 2 | 300000 | 5 | 100000 | 091234567 | Cover : 2 , Guard : 1`",
             parse_mode="Markdown"
@@ -1043,7 +1043,6 @@ async def handle_excel_upload(update: Update, context: ContextTypes.DEFAULT_TYPE
                     }
                     df.rename(columns={k: v for k, v in reverse_rename.items() if k in df.columns}, inplace=True)
                     
-                    # Backward compatibility for old Excel files missing these columns
                     if 'phone_number' not in df.columns: df['phone_number'] = ""
                     if 'gift_item' not in df.columns: df['gift_item'] = ""
                     if 'last_payment_date' not in df.columns: df['last_payment_date'] = ""
@@ -1194,7 +1193,7 @@ async def handle_button_clicks(update: Update, context: ContextTypes.DEFAULT_TYP
     elif text == "💵 လက်ငင်းရောင်း":
         await update.message.reply_text(f"{get_available_stock_info(user_id)}\n\n💵 `/sell_cash ဝယ်သူ | ပစ္စည်း၁ : အရေအတွက်၁ : ရောင်းဈေး၁ | ဖုန်း | လက်ဆောင်၁ : အရေအတွက်၁ , လက်ဆောင်၂ : အရေအတွက်၂`", parse_mode="Markdown")
     elif text == "⏳ ကြွေးရောင်း":
-        await update.message.reply_text(f"{get_available_stock_info(user_id)}\n\n⏳ `/sell_installment ဝယ်သူ | ပစ္စည်း | စပေါ်ငွေ | ကျန်သောလ | ၁လပေး | ဖုန်း | လက်ဆောင်`", parse_mode="Markdown")
+        await update.message.reply_text(f"{get_available_stock_info(user_id)}\n\n⏳ `/sell_installment ဝယ်သူ | ပစ္စည်း | စပေါ်ငွေ | ကျန်သောလ | ၁လပေး | ဖုန်း | လက်ဆောင်၁ : အရေအတွက်၁ , လက်ဆောင်၂ : အရေအတွက်၂`", parse_mode="Markdown")
     elif text == "🔍 ဝယ်သူရှာရန်":
         await update.message.reply_text("🔍 `/search <ဝယ်သူနာမည်>`", parse_mode="Markdown")
     elif text == "📈 လချုပ်/နှစ်ချုပ်":
